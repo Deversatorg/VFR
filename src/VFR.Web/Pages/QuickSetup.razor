@@ -1,0 +1,81 @@
+@page "/setup"
+@inject ProfileApiClient ProfileApi
+@inject AuthService AuthSvc
+@inject NavigationManager Nav
+@using VFR.Web.Services
+
+@if (!AuthSvc.IsAuthenticated)
+{
+    Nav.NavigateTo("/login");
+}
+
+<div class="page-container">
+    <div class="setup-card glass">
+        <h2>👋 Let's set up your profile</h2>
+        <p class="hint">These measurements help us generate your personalised avatar.</p>
+
+        <EditForm Model="model" OnValidSubmit="HandleSubmit">
+            <DataAnnotationsValidator/>
+
+            <div class="measurements-grid">
+                <div class="form-group">
+                    <label>Height (cm)</label>
+                    <InputNumber @bind-Value="model.Height" class="form-input" min="100" max="250"/>
+                </div>
+                <div class="form-group">
+                    <label>Weight (kg)</label>
+                    <InputNumber @bind-Value="model.Weight" class="form-input" min="30" max="300"/>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Body Type</label>
+                <InputSelect @bind-Value="model.BodyType" class="form-input">
+                    <option value="Slim">Slim</option>
+                    <option value="Athletic">Athletic</option>
+                    <option value="Regular">Regular</option>
+                    <option value="Curvy">Curvy</option>
+                    <option value="Plus">Plus</option>
+                </InputSelect>
+            </div>
+
+            @if (errorMessage is not null)
+            {
+                <div class="error-banner">@errorMessage</div>
+            }
+
+            <div class="form-actions">
+                <button type="submit" class="btn-primary" disabled="@isLoading">
+                    @if (isLoading) { <span class="spinner"></span> } else { <span>Generate My Avatar →</span> }
+                </button>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private SetupModel model = new() { Height = 175, Weight = 70, BodyType = "Regular" };
+    private string? errorMessage;
+    private bool isLoading;
+
+    private async Task HandleSubmit()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        var (profile, error) = await ProfileApi.QuickSetupAsync(model.Height, model.Weight, model.BodyType);
+        isLoading = false;
+
+        if (profile is not null)
+            Nav.NavigateTo("/avatar");
+        else
+            errorMessage = error ?? "Failed to create profile.";
+    }
+
+    private class SetupModel
+    {
+        public decimal Height   { get; set; }
+        public decimal Weight   { get; set; }
+        public string  BodyType { get; set; } = "Regular";
+    }
+}

@@ -1,0 +1,72 @@
+# .NET Core
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio
+.vs/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+build/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.vstools
+*.dbmdl
+*.jsproj.user
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Aspire
+.aspire/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.mypy_cache/
+.pytest_cache/
+
+# User-specific
+appsettings.Development.json
+appsettings.json
+# Wait - usually appsettings.json is committed as a template, 
+# but I'll exclude Development.json which might have local keys.
+# Actually, I'll keep it simple for now and only exclude clear secrets.
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

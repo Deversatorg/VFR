@@ -1,0 +1,6 @@
+@VFR.ProfileApi_HostAddress = http://localhost:5288
+
+GET {{VFR.ProfileApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

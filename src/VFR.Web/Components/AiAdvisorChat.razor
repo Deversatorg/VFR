@@ -1,0 +1,93 @@
+@using Microsoft.JSInterop
+@inject SizeAdvisorService Advisor
+@using VFR.Web.Services
+
+<div class="chat-container">
+    <div class="chat-header">
+        <span class="chat-icon">🤖</span>
+        <div>
+            <h3>AI Size Advisor</h3>
+            <span class="chat-status @(Advisor.IsAvailable ? "online" : "offline")">
+                @(Advisor.IsAvailable ? "● Online" : "● Configure OpenAI key to activate")
+            </span>
+        </div>
+    </div>
+
+    <div class="chat-messages" @ref="messagesContainer">
+        @foreach (var msg in messages)
+        {
+            <div class="chat-message @msg.Role">
+                <div class="message-bubble">@((MarkupString)FormatMarkdown(msg.Content))</div>
+            </div>
+        }
+        @if (isTyping)
+        {
+            <div class="chat-message assistant">
+                <div class="message-bubble typing">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="chat-input-area">
+        <textarea @bind="userInput" @bind:event="oninput"
+                  @onkeydown="HandleKeyDown"
+                  class="chat-input"
+                  placeholder="Ask about sizing, fit, or style…"
+                  rows="1"/>
+        <button class="btn-send" @onclick="SendMessage" disabled="@(isTyping || string.IsNullOrWhiteSpace(userInput))">
+            ➤
+        </button>
+    </div>
+</div>
+
+@code {
+    private List<(string Role, string Content)> messages = [];
+    private string userInput = "";
+    private bool isTyping;
+    private ElementReference messagesContainer;
+
+    protected override void OnInitialized()
+    {
+        messages.Add(("assistant",
+            "Hi! I'm your AI size advisor. Tell me what you're looking for and I'll help you find the perfect fit. 👗"));
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+            await SendMessage();
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(userInput) || isTyping) return;
+
+        var question = userInput.Trim();
+        userInput = "";
+        messages.Add(("user", question));
+        isTyping = true;
+        StateHasChanged();
+
+        var responseBuilder = new System.Text.StringBuilder();
+        messages.Add(("assistant", ""));
+        var idx = messages.Count - 1;
+
+        await foreach (var chunk in Advisor.AskAsync(question))
+        {
+            responseBuilder.Append(chunk);
+            messages[idx] = ("assistant", responseBuilder.ToString());
+            StateHasChanged();
+        }
+
+        isTyping = false;
+        StateHasChanged();
+    }
+
+    // Minimal Markdown → HTML (bold, newlines)
+    private static string FormatMarkdown(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            text.Replace("\n", "<br/>"),
+            @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+}

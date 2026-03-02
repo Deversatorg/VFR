@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option csharp_namespace = "VFR.Protos";
+
+package avatar;
+
+// ─── Service ───────────────────────────────────────────────────────────────────
+service AvatarService {
+  rpc GenerateAvatar (AvatarRequest) returns (AvatarResponse);
+}
+
+// ─── Messages ──────────────────────────────────────────────────────────────────
+message AvatarRequest {
+  string user_id     = 1;
+  float  height_cm   = 2;  // anthropometric height in centimetres
+  float  weight_kg   = 3;  // body weight in kilograms
+  string body_type   = 4;  // "Slim" | "Athletic" | "Regular" | "Curvy" | "Plus"
+  float  chest       = 5;  // chest circumference cm  (0 = not provided)
+  float  waist       = 6;  // waist circumference cm  (0 = not provided)
+  float  hip         = 7;  // hip  circumference cm  (0 = not provided)
+  float  shoulder    = 8;  // shoulder width cm        (0 = not provided)
+}
+
+message AvatarResponse {
+  string avatar_url  = 1;  // URL to the generated .glb model
+  string model_id    = 2;  // opaque identifier of the generated asset
+}
