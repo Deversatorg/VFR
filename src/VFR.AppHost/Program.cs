@@ -38,10 +38,15 @@ var profileApi = builder.AddProject<Projects.VFR_ProfileApi>("vfr-profileapi")
     .WaitFor(aiEngine)
     .WaitFor(authService);
 
-builder.AddProject<Projects.VFR_Web>("vfr-web")
+var vfrWeb = builder.AddNpmApp("vfr-web", "../vfr-web", "dev")
     .WithReference(authService)
     .WithReference(profileApi)
     .WaitFor(authService)
-    .WaitFor(profileApi);
+    .WaitFor(profileApi)
+    .WithEnvironment("VITE_AUTH_API_URL", authService.GetEndpoint("http"))
+    .WithEnvironment("VITE_PROFILE_API_URL", profileApi.GetEndpoint("http"))
+    .WithHttpEndpoint(env: "PORT")
+    .WithExternalHttpEndpoints()
+    .PublishAsDockerFile();
 
 builder.Build().Run();

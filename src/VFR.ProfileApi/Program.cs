@@ -24,16 +24,17 @@ builder.AddNpgsqlDbContext<ProfileDbContext>("profiles");
 builder.AddRedisClient("vfr-cache");
 
 // ── JWT Bearer Authentication ─────────────────────────────────────────────────
-// Must match ApplicationAuth.Common.Constants.AuthOptions exactly.
-// Key = HMACSHA256(base64 KEY).Key — mirroring how ApplicationAuth.JWTService signs tokens.
-var hmac = new HMACSHA256(Convert.FromBase64String(
-    "1rsfje36ZtLDpEdNgc8H0lY8uDxSN5W42oB2qzaMZZkFyjnmtyDzbIqxRVvHsw7GIqNUUqYsyS2IkLVT6NH3JQ=="));
+// Key MUST match ApplicationAuth.Common.Constants.AuthOptions.GetSymmetricSecurityKey()
+// which uses Encoding.ASCII.GetBytes(KEY) — NOT Convert.FromBase64String.
+const string JWT_KEY = "1rsfje36ZtLDpEdNgc8H0lY8uDxSN5W42oB2qzaMZZkFyjnmtyDzbIqxRVvHsw7GIqNUUqYsyS2IkLVT6NH3JQ==";
+var signingKeyBytes = System.Text.Encoding.ASCII.GetBytes(JWT_KEY);
+Console.WriteLine($"[JWT DEBUG] ProfileApi signing key length: {signingKeyBytes.Length} bytes, first 4: {signingKeyBytes[0]:X2}{signingKeyBytes[1]:X2}{signingKeyBytes[2]:X2}{signingKeyBytes[3]:X2}");
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false; // allow plain HTTP in dev/Aspire
+        options.RequireHttpsMetadata = false;
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -42,8 +43,26 @@ builder.Services
             ValidateAudience         = true,
             ValidAudience            = "Client",
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey         = new SymmetricSecurityKey(hmac.Key),
+            IssuerSigningKey         = new SymmetricSecurityKey(signingKeyBytes),
             ValidateLifetime         = true,
+        };
+        options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+        {
+            OnAuthenticationFailed = ctx =>
+            {
+                Console.WriteLine($"[JWT AUTH FAILED] {ctx.Exception.GetType().Name}: {ctx.Exception.Message}");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = ctx =>
+            {
+                Console.WriteLine($"[JWT AUTH OK] User: {ctx.Principal?.Identity?.Name}");
+                return Task.CompletedTask;
+            },
+            OnChallenge = ctx =>
+            {
+                Console.WriteLine($"[JWT CHALLENGE] Error: {ctx.Error}, Desc: {ctx.ErrorDescription}");
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -79,6 +98,29 @@ builder.Services.AddScoped<IAvatarGenerationService, GrpcAvatarGenerationService
 // ── RFC 7807 Problem Details ─────────────────────────────────────────────────
 builder.Services.AddProblemDetails();
 
+// ── CORS ──────────────────────────────────────────────────────────────────────
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        if (builder.Environment.IsDevelopment())
+        {
+            // Allow any localhost port (needed for Aspire dynamic port assignment)
+            policy.SetIsOriginAllowed(origin =>
+                    new Uri(origin).Host == "localhost" || new Uri(origin).Host == "127.0.0.1")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.WithOrigins("https://yourdomain.com")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        }
+    });
+});
+
 // ── API docs (dev only) ───────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
@@ -95,6 +137,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
