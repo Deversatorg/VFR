@@ -153,7 +153,7 @@ if (app.Environment.IsDevelopment())
 }
 
 // ── Profile API routes ────────────────────────────────────────────────────────
-var profileGroup = app.MapGroup("/api/profile")
+var profileGroup = app.MapGroup("/api/v1/profiles")
                       .WithTags("Profile");
 
 profileGroup.MapQuickSetup();

@@ -17,7 +17,7 @@ export default function QuickSetup() {
         setLoading(true);
         setError('');
         try {
-            await profileClient.post('/api/profile/quick-setup', {
+            await profileClient.post('/api/v1/profiles/quick-setup', {
                 height,
                 weight,
                 bodyType

@@ -13,7 +13,7 @@ export default function Register() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await authClient.post('/auth/register', { email, password });
+            await authClient.post('/api/v1/users', { email, password });
             setSuccess(true);
             setTimeout(() => navigate('/login'), 2000);
         } catch (err: any) {
