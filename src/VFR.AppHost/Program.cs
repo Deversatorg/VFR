@@ -30,7 +30,7 @@ var profileApi = builder.AddProject<Projects.VFR_ProfileApi>("vfr-profileapi")
     .WithReference(profileDb)
     .WithReference(redis)
     .WithReference(authService)   // JWT validation service discovery
-    .WithReference(aiEngine)      // Inject AI Engine endpoints automatically
+    .WithReference(aiEngine.GetEndpoint("grpc")) // Inject AI Engine grpc endpoint
     .WaitFor(profileDb)
     .WaitFor(redis)
     .WaitFor(aiEngine)
