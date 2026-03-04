@@ -23,6 +23,12 @@ builder.AddNpgsqlDbContext<ProfileDbContext>("profiles");
 // ── Redis (distributed cache, future session storage) ─────────────────────────
 builder.AddRedisClient("vfr-cache");
 
+// ── JSON Serialization ────────────────────────────────────────────────────────
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
+
 // ── JWT Bearer Authentication ─────────────────────────────────────────────────
 // Key MUST match ApplicationAuth.Common.Constants.AuthOptions.GetSymmetricSecurityKey()
 // which uses Encoding.ASCII.GetBytes(KEY) — NOT Convert.FromBase64String.
