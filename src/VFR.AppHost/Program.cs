@@ -30,9 +30,7 @@ var profileApi = builder.AddProject<Projects.VFR_ProfileApi>("vfr-profileapi")
     .WithReference(profileDb)
     .WithReference(redis)
     .WithReference(authService)   // JWT validation service discovery
-    // Inject AI Engine gRPC address so service discovery resolves it.
-    // Force the use of the 'http' scheme to avoid UntrustedRoot errors with the Python container.
-    .WithEnvironment("services__vfr-aiengine__grpc__0", aiEngine.GetEndpoint("grpc"))
+    .WithReference(aiEngine)      // Inject AI Engine endpoints automatically
     .WaitFor(profileDb)
     .WaitFor(redis)
     .WaitFor(aiEngine)

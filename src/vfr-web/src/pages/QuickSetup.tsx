@@ -22,7 +22,7 @@ export default function QuickSetup() {
                 weight,
                 bodyType
             });
-            navigate('/avatar');
+            navigate('/studio');
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to save profile setup. Please try again.');
         } finally {

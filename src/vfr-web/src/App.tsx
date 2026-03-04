@@ -3,31 +3,49 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import QuickSetup from './pages/QuickSetup';
-import AvatarViewer from './pages/AvatarViewer';
+import Home from './pages/Home';
+import Studio from './pages/Studio';
+import Settings from './pages/Settings';
+import AppLayout from './components/layout/AppLayout';
 import { useAuthStore } from './store/authStore';
 
-// Protected Route Wrapper
+// Protected Route Wrapper - Uses AppLayout
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const isAuthenticated = useAuthStore(state => state.isAuthenticated);
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  return children;
+  return <AppLayout>{children}</AppLayout>;
+};
+
+// Auth Guard (Stop authenticated users from seeing Login/Register/Home again)
+const AuthGuard = ({ children }: { children: ReactNode }) => {
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  if (isAuthenticated) {
+    return <Navigate to="/studio" replace />;
+  }
+  return <>{children}</>;
 };
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        {/* Unauthenticated / Public Routes */}
+        <Route path="/" element={<AuthGuard><Home /></AuthGuard>} />
+        <Route path="/login" element={<AuthGuard><Login /></AuthGuard>} />
+        <Route path="/register" element={<AuthGuard><Register /></AuthGuard>} />
 
-        {/* Protected Routes */}
+        {/* Setup Flow (Protected, but no Layout needed usually. We use layout to get the Navbar but hide it in logic) */}
         <Route path="/setup" element={<ProtectedRoute><QuickSetup /></ProtectedRoute>} />
-        <Route path="/avatar" element={<ProtectedRoute><AvatarViewer /></ProtectedRoute>} />
 
-        {/* Default Redirect */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Protected Dashboard Routes  */}
+        <Route path="/studio" element={<ProtectedRoute><Studio /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+
+        {/* Redirects */}
+        <Route path="/avatar" element={<Navigate to="/studio" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

@@ -87,7 +87,7 @@ builder.Services.AddValidatorsFromAssemblyContaining<QuickSetupValidator>();
 // We configure the handler to bypass SSL validation for local dev/Docker scenarios.
 builder.Services.AddGrpcClient<AvatarService.AvatarServiceClient>(o =>
 {
-    o.Address = new Uri("http://vfr-aiengine");
+    o.Address = new Uri("http://_grpc.vfr-aiengine");
 })
 .ConfigurePrimaryHttpMessageHandler(() =>
 {
