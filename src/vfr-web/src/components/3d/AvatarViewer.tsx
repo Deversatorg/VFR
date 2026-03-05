@@ -43,18 +43,9 @@ function PlaceholderAvatar() {
 // Loads a realistic Avatar GLB if provided
 function LoadedAvatar({ url }: { url: string }) {
     // We now load the generated SMPL model here via useGLTF
-    try {
-        const { scene } = useGLTF(url);
-        return <primitive object={scene} />;
-    } catch (e) {
-        console.error("Failed to load GLTF at URL:", url, e);
-        return (
-            <mesh position={[0, 0, 0]} scale={1.2}>
-                <capsuleGeometry args={[0.5, 1.5, 4, 32]} />
-                <meshStandardMaterial color="#ef4444" roughness={0.4} metalness={0.1} />
-            </mesh>
-        );
-    }
+    // React Suspense relies on throwing Promises, so try/catch breaks it here.
+    const { scene } = useGLTF(url);
+    return <primitive object={scene} />;
 }
 
 export default function AvatarViewer({ modelUrl }: AvatarViewerProps) {
