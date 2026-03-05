@@ -11,12 +11,21 @@ var profileDb = postgres.AddDatabase("profiles");
 
 var redis = builder.AddRedis("vfr-cache");
 
-// Python gRPC AI Engine (built from src/VFR.AiEngine/Dockerfile)
+// Python AI Engine (gRPC + FastAPI)
 // Aspire builds the Docker image automatically; ProfileApi discovers it via env var.
 var aiEngine = builder.AddDockerfile("vfr-aiengine", "../VFR.AiEngine")
-    .WithHttpEndpoint(port: 50051, targetPort: 50051, name: "grpc", isProxied: false); 
-    // .WithHttpEndpoint defaults to http scheme. 
-    // In dev, Aspire might try to proxy this over https if not careful.
+    .WithReference(redis)
+    .WithBindMount("../avatars_storage", "/app/avatars")
+    .WithEnvironment("REDIS_URL", redis.GetEndpoint("tcp"))
+    .WithHttpEndpoint(port: 50051, targetPort: 50051, name: "grpc", isProxied: false)
+    .WithHttpEndpoint(port: 8000, targetPort: 8000, name: "http"); 
+
+// Python Celery Worker (using the same Dockerfile)
+var aiEngineWorker = builder.AddDockerfile("vfr-aiengine-worker", "../VFR.AiEngine")
+    .WithReference(redis)
+    .WithBindMount("../avatars_storage", "/app/avatars")
+    .WithEnvironment("REDIS_URL", redis.GetEndpoint("tcp"))
+    .WithArgs("celery", "-A", "worker.celery_app", "worker", "--loglevel=info");
 
 // ──────────────────────────────────────────────────────────────────
 // Microservices
@@ -39,10 +48,13 @@ var profileApi = builder.AddProject<Projects.VFR_ProfileApi>("vfr-profileapi")
 var vfrWeb = builder.AddNpmApp("vfr-web", "../vfr-web", "dev")
     .WithReference(authService)
     .WithReference(profileApi)
+    .WithReference(aiEngine.GetEndpoint("http"))
     .WaitFor(authService)
     .WaitFor(profileApi)
+    .WaitFor(aiEngine)
     .WithEnvironment("VITE_AUTH_API_URL", authService.GetEndpoint("http"))
     .WithEnvironment("VITE_PROFILE_API_URL", profileApi.GetEndpoint("http"))
+    .WithEnvironment("VITE_AI_ENGINE_API_URL", aiEngine.GetEndpoint("http"))
     .WithHttpEndpoint(env: "PORT")
     .WithExternalHttpEndpoints()
     .PublishAsDockerFile();

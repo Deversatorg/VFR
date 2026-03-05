@@ -8,6 +8,7 @@ using VFR.ProfileApi.Features.UpdateMeasurements;
 using VFR.ProfileApi.Infrastructure;
 using VFR.ProfileApi.Services;
 using VFR.Protos;
+using VFR.ProfileApi.Features.GetProfile;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -156,6 +157,8 @@ if (app.Environment.IsDevelopment())
 var profileGroup = app.MapGroup("/api/v1/profiles")
                       .WithTags("Profile");
 
+
+profileGroup.MapGetProfile();
 profileGroup.MapQuickSetup();
 profileGroup.MapUpdateMeasurements();
 

@@ -8,6 +8,7 @@ export default function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
     const [isLoading, setIsLoading] = useState(false);
 
     const login = useAuthStore(state => state.login);
@@ -17,6 +18,7 @@ export default function Login() {
         e.preventDefault();
         setIsLoading(true);
         setError('');
+        setFieldErrors({});
         try {
             const response = await authClient.post('/api/v1/sessions', { email, password });
             // Backend returns: { data: { user: {...}, token: { accessToken: "...", refreshToken: "..." } } }
@@ -26,7 +28,10 @@ export default function Login() {
                 navigate('/setup');
             }
         } catch (err: any) {
-            setError(err.response?.data?.detail || 'Login failed. Please check your credentials.');
+            if (err.response?.data?.errors) {
+                setFieldErrors(err.response.data.errors);
+            }
+            setError(err.response?.data?.detail || err.response?.data?.title || 'Login failed. Please check your credentials.');
         } finally {
             setIsLoading(false);
         }
@@ -89,31 +94,37 @@ export default function Login() {
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-5">
-                        <div className="space-y-2">
-                            <label className="text-[12px] font-medium text-gray-400 uppercase tracking-widest ml-1">Email</label>
+                        <div className="space-y-1.5">
+                            <label className={`text-[12px] font-medium uppercase tracking-widest ml-1 ${fieldErrors.email ? 'text-red-400' : 'text-gray-400'}`}>Email</label>
                             <input
                                 type="email"
                                 value={email}
-                                onChange={e => setEmail(e.target.value)}
+                                onChange={e => { setEmail(e.target.value); if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: [] })); }}
                                 required
                                 placeholder="name@example.com"
-                                className="w-full px-5 py-4 bg-[#111111] border border-white/[0.06] rounded-2xl text-white placeholder-gray-600 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none transition-all duration-300 shadow-inner"
+                                className={`w-full px-5 py-4 bg-[#111111] border ${fieldErrors.email && fieldErrors.email.length > 0 ? 'border-red-500/50 focus:ring-red-500 focus:border-red-500' : 'border-white/[0.06] focus:ring-primary focus:border-primary'} rounded-2xl text-white placeholder-gray-600 focus:ring-1 focus:outline-none transition-all duration-300 shadow-inner`}
                             />
+                            {fieldErrors.email && fieldErrors.email.length > 0 && (
+                                <p className="text-red-400 text-[11px] ml-2 mt-1 font-medium">{fieldErrors.email[0]}</p>
+                            )}
                         </div>
 
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                             <div className="flex justify-between items-center ml-1">
-                                <label className="text-[12px] font-medium text-gray-400 uppercase tracking-widest">Password</label>
+                                <label className={`text-[12px] font-medium uppercase tracking-widest ${fieldErrors.password ? 'text-red-400' : 'text-gray-400'}`}>Password</label>
                                 <a href="#" className="text-[12px] font-medium text-primary hover:text-white transition-colors duration-200">Forgot?</a>
                             </div>
                             <input
                                 type="password"
                                 value={password}
-                                onChange={e => setPassword(e.target.value)}
+                                onChange={e => { setPassword(e.target.value); if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: [] })); }}
                                 required
                                 placeholder="••••••••"
-                                className="w-full px-5 py-4 bg-[#111111] border border-white/[0.06] rounded-2xl text-white placeholder-gray-600 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none transition-all duration-300 shadow-inner"
+                                className={`w-full px-5 py-4 bg-[#111111] border ${fieldErrors.password && fieldErrors.password.length > 0 ? 'border-red-500/50 focus:ring-red-500 focus:border-red-500' : 'border-white/[0.06] focus:ring-primary focus:border-primary'} rounded-2xl text-white placeholder-gray-600 focus:ring-1 focus:outline-none transition-all duration-300 shadow-inner`}
                             />
+                            {fieldErrors.password && fieldErrors.password.length > 0 && (
+                                <p className="text-red-400 text-[11px] ml-2 mt-1 font-medium">{fieldErrors.password[0]}</p>
+                            )}
                         </div>
 
                         <button
