@@ -6,7 +6,10 @@ import QuickSetup from './pages/QuickSetup';
 import Home from './pages/Home';
 import Studio from './pages/Studio';
 import Settings from './pages/Settings';
+import Technology from './pages/Technology';
+import Pricing from './pages/Pricing';
 import AppLayout from './components/layout/AppLayout';
+import PublicLayout from './components/layout/PublicLayout';
 import { useAuthStore } from './store/authStore';
 
 // Protected Route Wrapper - Uses AppLayout
@@ -32,7 +35,9 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* Unauthenticated / Public Routes */}
-        <Route path="/" element={<AuthGuard><Home /></AuthGuard>} />
+        <Route path="/" element={<AuthGuard><PublicLayout><Home /></PublicLayout></AuthGuard>} />
+        <Route path="/technology" element={<AuthGuard><PublicLayout><Technology /></PublicLayout></AuthGuard>} />
+        <Route path="/pricing" element={<AuthGuard><PublicLayout><Pricing /></PublicLayout></AuthGuard>} />
         <Route path="/login" element={<AuthGuard><Login /></AuthGuard>} />
         <Route path="/register" element={<AuthGuard><Register /></AuthGuard>} />
 

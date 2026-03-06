@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Float, MeshDistortMaterial, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+import { ErrorBoundary } from 'react-error-boundary';
 
 interface AvatarViewerProps {
     modelUrl?: string | null;
@@ -42,16 +43,32 @@ function PlaceholderAvatar() {
 
 // Loads a realistic Avatar GLB if provided
 function LoadedAvatar({ url }: { url: string }) {
-    // We now load the generated SMPL model here via useGLTF
+    console.log("🔥 LoadedAvatar is rendering with URL:", url);
     // React Suspense relies on throwing Promises, so try/catch breaks it here.
     const { scene } = useGLTF(url);
     return <primitive object={scene} />;
 }
 
+function AvatarErrorFallback({ error, resetErrorBoundary }: any) {
+    console.error("ErrorBoundary caught GLTF parse error:", error);
+    return (
+        <mesh position={[0, 0, 0]} scale={1.2}>
+            <capsuleGeometry args={[0.5, 1.5, 4, 32]} />
+            <meshStandardMaterial color="#ef4444" roughness={0.4} metalness={0.1} />
+        </mesh>
+    );
+}
+
 export default function AvatarViewer({ modelUrl }: AvatarViewerProps) {
     return (
         <group position={[0, -0.5, 0]}>
-            {modelUrl ? <LoadedAvatar url={modelUrl} /> : <PlaceholderAvatar />}
+            {modelUrl ? (
+                <ErrorBoundary FallbackComponent={AvatarErrorFallback}>
+                    <LoadedAvatar url={modelUrl} />
+                </ErrorBoundary>
+            ) : (
+                <PlaceholderAvatar />
+            )}
         </group>
     );
 }

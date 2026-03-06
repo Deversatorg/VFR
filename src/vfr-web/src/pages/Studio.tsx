@@ -190,14 +190,13 @@ export default function Studio() {
                     </div>
                 )}
 
-                {/* 3D Canvas */}
                 <div className="absolute inset-0 z-10">
-                    <Suspense fallback={null}>
-                        <Canvas
-                            camera={{ position: [0, 1.2, 4], fov: 45 }}
-                            gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
-                            dpr={[1, 2]}
-                        >
+                    <Canvas
+                        camera={{ position: [0, 1.2, 4], fov: 45 }}
+                        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
+                        dpr={[1, 2]}
+                    >
+                        <Suspense fallback={null}>
                             <Environment preset="city" />
                             <ambientLight intensity={0.4} />
                             <spotLight position={[5, 5, 5]} angle={0.2} penumbra={1} intensity={1} castShadow />
@@ -216,8 +215,8 @@ export default function Studio() {
                                 autoRotate
                                 autoRotateSpeed={0.5}
                             />
-                        </Canvas>
-                    </Suspense>
+                        </Suspense>
+                    </Canvas>
                 </div>
 
                 {/* Viewport UI Overlays */}

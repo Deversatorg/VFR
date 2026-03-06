@@ -10,6 +10,7 @@ try:
     import trimesh
     import numpy as np
     from scipy.spatial import cKDTree
+    from pygltflib import GLTF2, Scene as GLTFScene, Node, Mesh, Primitive, Attributes, Buffer, BufferView, Accessor, Asset
     HAS_ML_DEPS = True
 except ImportError:
     HAS_ML_DEPS = False
@@ -68,9 +69,8 @@ class AvatarMLPipeline:
             
         # Mock trimesh creation
         if HAS_ML_DEPS:
-            mesh = trimesh.creation.capsule(radius=0.15, height=1.6)
-            # Just color it green for debugging
-            mesh.visual.vertex_colors = np.ones((len(mesh.vertices), 4)) * [50, 200, 50, 255]
+            # Box is safer for basic GLTF testing than Capsule
+            mesh = trimesh.creation.box(extents=[0.4, 1.6, 0.4])
             return mesh
         return None
 
@@ -108,9 +108,6 @@ class AvatarMLPipeline:
             # Push intersecting garment vertices out along the body normal
             push_vectors = body_normals[collision_mask] * (0.015 - distances[collision_mask])[:, np.newaxis]
             garment_mesh.vertices[collision_mask] += push_vectors
-
-        # C) Color the garment for visualization
-        garment_mesh.visual.vertex_colors = np.ones((len(garment_mesh.vertices), 4)) * [50, 100, 200, 255]
         
         return garment_mesh
 
@@ -136,13 +133,81 @@ class AvatarMLPipeline:
             time.sleep(2) # Simulate GPU compute delay for UI testing
             
             if HAS_ML_DEPS and body_mesh:
-                scene = trimesh.Scene()
-                scene.add_geometry(body_mesh, geom_name='smplx_body')
-                if garment_mesh:
-                    scene.add_geometry(garment_mesh, geom_name='fitted_garment')
+                # ------------------- PYGLTFLIB EXPORT -------------------
+                # Trimesh export often creates invalid GLB for React Three Fiber (context loss).
+                # We manually build a compliant GLB using pygltflib.
                 
-                # Export to GLB format (efficient web transmission)
-                scene.export(output_path)
+                # Combine meshes for simple export (or just export body if garment missing)
+                final_mesh = body_mesh
+                if garment_mesh:
+                    # In a real app we'd keep them as separate primitives
+                    final_mesh = trimesh.util.concatenate([body_mesh, garment_mesh])
+                
+                vertices = final_mesh.vertices.astype(np.float32)
+                indices = final_mesh.faces.astype(np.uint32)
+                
+                # Pack binary data
+                vertices_byte_data = vertices.tobytes()
+                indices_byte_data = indices.tobytes()
+                blob = vertices_byte_data + indices_byte_data
+                
+                gltf = GLTF2(
+                    scene=0,
+                    scenes=[GLTFScene(nodes=[0])],
+                    nodes=[Node(mesh=0)],
+                    meshes=[
+                        Mesh(primitives=[
+                            Primitive(
+                                attributes=Attributes(POSITION=1),
+                                indices=0,
+                                material=None
+                            )
+                        ])
+                    ],
+                    accessors=[
+                        # Indices accessor
+                        Accessor(
+                            bufferView=0,
+                            componentType=5125, # UNSIGNED_INT
+                            count=indices.size,
+                            type="SCALAR",
+                            max=[int(indices.max())],
+                            min=[int(indices.min())],
+                        ),
+                        # Vertices accessor
+                        Accessor(
+                            bufferView=1,
+                            componentType=5126, # FLOAT
+                            count=len(vertices),
+                            type="VEC3",
+                            max=vertices.max(axis=0).tolist(),
+                            min=vertices.min(axis=0).tolist(),
+                        ),
+                    ],
+                    bufferViews=[
+                        BufferView(
+                            buffer=0,
+                            byteOffset=len(vertices_byte_data),
+                            byteLength=len(indices_byte_data),
+                            target=34963, # ELEMENT_ARRAY_BUFFER
+                        ),
+                        BufferView(
+                            buffer=0,
+                            byteOffset=0,
+                            byteLength=len(vertices_byte_data),
+                            target=34962, # ARRAY_BUFFER
+                        ),
+                    ],
+                    buffers=[
+                        Buffer(
+                            byteLength=len(blob)
+                        )
+                    ]
+                )
+                gltf.set_binary_blob(blob)
+                gltf.save(output_path)
+                logger.info("Successfully exported valid GLB via pygltflib!")
+
             else:
                 # If dependencies aren't installed (dev mode), create a valid minimal empty GLB file
                 # This is a generic valid 12-byte GLB header to prevent the frontend from crashing.
@@ -220,13 +285,40 @@ class AvatarMLPipeline:
             time.sleep(2) # Simulate CPU/GPU processing
             
             if HAS_ML_DEPS and body_mesh:
-                scene = trimesh.Scene()
-                scene.add_geometry(body_mesh, geom_name='smplx_body')
+                # ------------------- PYGLTFLIB EXPORT -------------------
+                final_mesh = body_mesh
                 if garment_mesh:
-                    scene.add_geometry(garment_mesh, geom_name='fitted_garment')
-                scene.export(output_path)
+                    final_mesh = trimesh.util.concatenate([body_mesh, garment_mesh])
+                
+                vertices = final_mesh.vertices.astype(np.float32)
+                indices = final_mesh.faces.astype(np.uint32)
+                
+                vertices_byte_data = vertices.tobytes()
+                indices_byte_data = indices.tobytes()
+                blob = vertices_byte_data + indices_byte_data
+                
+                gltf = GLTF2(
+                    scene=0,
+                    scenes=[GLTFScene(nodes=[0])],
+                    nodes=[Node(mesh=0)],
+                    meshes=[
+                        Mesh(primitives=[
+                            Primitive(attributes=Attributes(POSITION=1), indices=0)
+                        ])
+                    ],
+                    accessors=[
+                        Accessor(bufferView=0, componentType=5125, count=indices.size, type="SCALAR", max=[int(indices.max())], min=[int(indices.min())]),
+                        Accessor(bufferView=1, componentType=5126, count=len(vertices), type="VEC3", max=vertices.max(axis=0).tolist(), min=vertices.min(axis=0).tolist()),
+                    ],
+                    bufferViews=[
+                        BufferView(buffer=0, byteOffset=len(vertices_byte_data), byteLength=len(indices_byte_data), target=34963),
+                        BufferView(buffer=0, byteOffset=0, byteLength=len(vertices_byte_data), target=34962),
+                    ],
+                    buffers=[Buffer(byteLength=len(blob))]
+                )
+                gltf.set_binary_blob(blob)
+                gltf.save(output_path)
             else:
-                # If dependencies aren't installed (dev mode), create a valid minimal empty GLB file
                 minimal_glb = b'glTF\x02\x00\x00\x00\x0c\x00\x00\x00'
                 with open(output_path, 'wb') as f:
                     f.write(minimal_glb)
