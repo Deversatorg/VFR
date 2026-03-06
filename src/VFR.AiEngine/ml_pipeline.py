@@ -58,8 +58,9 @@ class AvatarMLPipeline:
     def _generate_body_mesh(self, betas: torch.Tensor, body_pose: torch.Tensor) -> trimesh.Trimesh:
         """
         Passes parameters through the SMPL-X differentiable layer to construct the 3D human mesh.
+        If SMPL-X is missing, falls back to the high-poly Xbot GLB mannequin.
         """
-        logger.info("Generating 3D body vertices via SMPL-X forward pass...")
+        logger.info("Generating 3D body vertices...")
         if self.smpl_model:
             # output = self.smpl_model(betas=betas, body_pose=body_pose)
             # vertices = output.vertices.detach().cpu().numpy().squeeze()
@@ -67,160 +68,74 @@ class AvatarMLPipeline:
             # return trimesh.Trimesh(vertices, faces, process=False)
             pass
             
-        # Mock trimesh creation
-        if HAS_ML_DEPS:
-            # Box is safer for basic GLTF testing than Capsule
-            mesh = trimesh.creation.box(extents=[0.4, 1.6, 0.4])
-            return mesh
-        return None
-
-    def _virtual_try_on(self, body_mesh: trimesh.Trimesh, garment_path: str = None) -> trimesh.Trimesh:
-        """
-        3D Virtual Try-On Algorithm:
-        1. Load garment mesh.
-        2. Align garment roughly using rigid transformation (Translation + Scale).
-        3. Transfer Skinning Weights: Find nearest neighbors from body to garment,
-           and transfer the bone weights. This allows the garment to animate with the body.
-        4. Resolve Collisions: Laplacian smoothing or push garment vertices out of body.
-        """
-        logger.info("Processing 3D Virtual Try-On (Garment Registration & Skinning Transfer)...")
-        if not HAS_ML_DEPS or not body_mesh:
-            return None
-            
-        # Mocking the loaded garment
-        garment_mesh = trimesh.creation.cylinder(radius=0.18, height=0.6)
-        # Move garment up to 'torso' level
-        garment_mesh.apply_translation([0, 0.4, 0])
-
-        # Algorithm Details:
-        # A) Spatial Query for Skinning Transfer
-        logger.info("Transferring skeletal weights to garment via KDTree...")
-        body_kd_tree = cKDTree(body_mesh.vertices)
-        distances, nearest_indices = body_kd_tree.query(garment_mesh.vertices, k=1)
-
-        # B) Collision Resolution
-        # Push garment vertices outwards if distance < threshold (intersecting body)
-        logger.info("Resolving body-garment intersections...")
-        collision_mask = distances < 0.015 # 1.5cm threshold
-        if np.any(collision_mask):
-            # Calculate normals of the nearest body vertices
-            body_normals = body_mesh.vertex_normals[nearest_indices]
-            # Push intersecting garment vertices out along the body normal
-            push_vectors = body_normals[collision_mask] * (0.015 - distances[collision_mask])[:, np.newaxis]
-            garment_mesh.vertices[collision_mask] += push_vectors
-        
-        return garment_mesh
+        return None  # We bypass Trimesh generation for the fallback now
 
     def process_image(self, image_bytes: bytes) -> str:
         """
         Main Pipeline Entrypoint: Takes image, runs pipelines, exports GLB.
         """
         try:
-            # 1. Body Estimation
             betas, body_pose = self._estimate_pose_and_shape(image_bytes)
             
-            # 2. SMPL-X Mesh Generation
-            body_mesh = self._generate_body_mesh(betas, body_pose)
-            
-            # 3. Virtual Try On (Assuming a default t-shirt for now)
-            garment_mesh = self._virtual_try_on(body_mesh)
-            
-            # 4. Scene Assembly and Export
             file_id = str(uuid.uuid4())
             output_path = f"/tmp/{file_id}.glb"
             logger.info(f"Assembling Scene and exporting to {output_path}...")
             
-            time.sleep(2) # Simulate GPU compute delay for UI testing
+            time.sleep(2) # Simulate GPU compute delay
             
-            if HAS_ML_DEPS and body_mesh:
-                # ------------------- PYGLTFLIB EXPORT -------------------
-                # Trimesh export often creates invalid GLB for React Three Fiber (context loss).
-                # We manually build a compliant GLB using pygltflib.
+            if self.smpl_model:
+                pass # Original Trimesh export logic goes here when SMPL-X is active 
                 
-                # Combine meshes for simple export (or just export body if garment missing)
-                final_mesh = body_mesh
-                if garment_mesh:
-                    # In a real app we'd keep them as separate primitives
-                    final_mesh = trimesh.util.concatenate([body_mesh, garment_mesh])
-                
-                vertices = final_mesh.vertices.astype(np.float32)
-                indices = final_mesh.faces.astype(np.uint32)
-                
-                # Pack binary data
-                vertices_byte_data = vertices.tobytes()
-                indices_byte_data = indices.tobytes()
-                blob = vertices_byte_data + indices_byte_data
-                
-                gltf = GLTF2(
-                    scene=0,
-                    scenes=[GLTFScene(nodes=[0])],
-                    nodes=[Node(mesh=0)],
-                    meshes=[
-                        Mesh(primitives=[
-                            Primitive(
-                                attributes=Attributes(POSITION=1),
-                                indices=0,
-                                material=None
-                            )
-                        ])
-                    ],
-                    accessors=[
-                        # Indices accessor
-                        Accessor(
-                            bufferView=0,
-                            componentType=5125, # UNSIGNED_INT
-                            count=indices.size,
-                            type="SCALAR",
-                            max=[int(indices.max())],
-                            min=[int(indices.min())],
-                        ),
-                        # Vertices accessor
-                        Accessor(
-                            bufferView=1,
-                            componentType=5126, # FLOAT
-                            count=len(vertices),
-                            type="VEC3",
-                            max=vertices.max(axis=0).tolist(),
-                            min=vertices.min(axis=0).tolist(),
-                        ),
-                    ],
-                    bufferViews=[
-                        BufferView(
-                            buffer=0,
-                            byteOffset=len(vertices_byte_data),
-                            byteLength=len(indices_byte_data),
-                            target=34963, # ELEMENT_ARRAY_BUFFER
-                        ),
-                        BufferView(
-                            buffer=0,
-                            byteOffset=0,
-                            byteLength=len(vertices_byte_data),
-                            target=34962, # ARRAY_BUFFER
-                        ),
-                    ],
-                    buffers=[
-                        Buffer(
-                            byteLength=len(blob)
-                        )
-                    ]
-                )
-                gltf.set_binary_blob(blob)
-                gltf.save(output_path)
-                logger.info("Successfully exported valid GLB via pygltflib!")
-
-            else:
-                # If dependencies aren't installed (dev mode), create a valid minimal empty GLB file
-                # This is a generic valid 12-byte GLB header to prevent the frontend from crashing.
-                # format: magic (glTF), version (2), length (12)
-                minimal_glb = b'glTF\x02\x00\x00\x00\x0c\x00\x00\x00'
-                with open(output_path, 'wb') as f:
-                    f.write(minimal_glb)
-                    
+            # FALLBACK: Use high-poly Xbot mannequin
+            self._generate_scaled_mannequin_glb(betas, output_path)
+            
             return output_path
             
         except Exception as e:
             logger.error(f"Pipeline failed: {str(e)}")
             raise e
+
+    def _generate_scaled_mannequin_glb(self, betas: torch.Tensor, output_path: str):
+        """
+        Loads the high-poly base mannequin, scales it based on heuristic betas, 
+        and saves it using pygltflib to preserve materials and skeletons.
+        """
+        import os
+        base_glb_path = os.path.join(os.path.dirname(__file__), "models", "Xbot.glb")
+        
+        if not os.path.exists(base_glb_path):
+            logger.warning("Xbot.glb not found! Using minimal fallback.")
+            minimal_glb = b'glTF\x02\x00\x00\x00\x0c\x00\x00\x00'
+            with open(output_path, 'wb') as f:
+                f.write(minimal_glb)
+            return
+
+        logger.info(f"Loading Base Mannequin from {base_glb_path}...")
+        gltf = GLTF2().load(base_glb_path)
+        
+        # Calculate scale multipliers
+        height_factor = float(betas[0, 0].item()) * 0.05
+        weight_factor = float(betas[0, 1].item()) * 0.01
+        
+        y_scale = 1.0 + height_factor  # Height translation
+        xz_scale = 1.0 + weight_factor # Girth/Width translation
+        
+        logger.info(f"Scaling mannequin by: XZ={xz_scale:.2f}, Y={y_scale:.2f}")
+        
+        # Apply scale strictly to the root nodes of the active scene
+        scene = gltf.scenes[gltf.scene]
+        for node_idx in scene.nodes:
+            node = gltf.nodes[node_idx]
+            # Pygltflib node.scale defaults to None if it's [1,1,1] in the file
+            if node.scale is None:
+                node.scale = [1.0, 1.0, 1.0]
+            
+            node.scale[0] *= xz_scale
+            node.scale[1] *= y_scale
+            node.scale[2] *= xz_scale
+            
+        gltf.save(output_path)
+        logger.info(f"Scaled mannequin exported successfully!")
 
     def _simulate_profile_betas(self, height_cm: float, weight_kg: float, body_type: str) -> torch.Tensor:
         """
@@ -268,60 +183,18 @@ class AvatarMLPipeline:
             
             # 1. Body Estimation purely from math
             betas = self._simulate_profile_betas(height_cm, weight_kg, body_type)
-            # Default T-Pose / A-Pose
-            body_pose = torch.eye(3, device=self.device).expand(1, 21, 3, 3) 
             
-            # 2. SMPL-X Mesh Generation
-            body_mesh = self._generate_body_mesh(betas, body_pose)
-            
-            # 3. Virtual Try On (Assuming a default t-shirt for now)
-            garment_mesh = self._virtual_try_on(body_mesh)
-            
-            # 4. Scene Assembly and Export
             file_id = str(uuid.uuid4())
             output_path = f"/tmp/profile_{file_id}.glb"
             logger.info(f"Assembling Scene and exporting to {output_path}...")
             
             time.sleep(2) # Simulate CPU/GPU processing
             
-            if HAS_ML_DEPS and body_mesh:
-                # ------------------- PYGLTFLIB EXPORT -------------------
-                final_mesh = body_mesh
-                if garment_mesh:
-                    final_mesh = trimesh.util.concatenate([body_mesh, garment_mesh])
-                
-                vertices = final_mesh.vertices.astype(np.float32)
-                indices = final_mesh.faces.astype(np.uint32)
-                
-                vertices_byte_data = vertices.tobytes()
-                indices_byte_data = indices.tobytes()
-                blob = vertices_byte_data + indices_byte_data
-                
-                gltf = GLTF2(
-                    scene=0,
-                    scenes=[GLTFScene(nodes=[0])],
-                    nodes=[Node(mesh=0)],
-                    meshes=[
-                        Mesh(primitives=[
-                            Primitive(attributes=Attributes(POSITION=1), indices=0)
-                        ])
-                    ],
-                    accessors=[
-                        Accessor(bufferView=0, componentType=5125, count=indices.size, type="SCALAR", max=[int(indices.max())], min=[int(indices.min())]),
-                        Accessor(bufferView=1, componentType=5126, count=len(vertices), type="VEC3", max=vertices.max(axis=0).tolist(), min=vertices.min(axis=0).tolist()),
-                    ],
-                    bufferViews=[
-                        BufferView(buffer=0, byteOffset=len(vertices_byte_data), byteLength=len(indices_byte_data), target=34963),
-                        BufferView(buffer=0, byteOffset=0, byteLength=len(vertices_byte_data), target=34962),
-                    ],
-                    buffers=[Buffer(byteLength=len(blob))]
-                )
-                gltf.set_binary_blob(blob)
-                gltf.save(output_path)
-            else:
-                minimal_glb = b'glTF\x02\x00\x00\x00\x0c\x00\x00\x00'
-                with open(output_path, 'wb') as f:
-                    f.write(minimal_glb)
+            if self.smpl_model:
+                pass # Original SMPL-X generation goes here
+            
+            # FALLBACK: Use high-poly Xbot mannequin 
+            self._generate_scaled_mannequin_glb(betas, output_path)
                     
             return output_path
             

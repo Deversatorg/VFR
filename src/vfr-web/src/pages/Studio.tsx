@@ -3,86 +3,43 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import { Layers, Download, Maximize, Cpu, Rotate3D, Upload } from 'lucide-react';
 import AvatarViewer from '../components/3d/AvatarViewer';
-import { profileClient, avatarClient } from '../api/apiClients';
+import { profileClient } from '../api/apiClients';
 import { useNavigate } from 'react-router-dom';
 
 export default function Studio() {
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [modelLoading, setModelLoading] = useState(true);
-    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
-    const [statusMessage, setStatusMessage] = useState('Compiling Mesh');
     const navigate = useNavigate();
 
-    // Fetch parametric profile and generate baseline avatar
+    // Parametric controls state
+    const [height, setHeight] = useState(170);
+    const [weight, setWeight] = useState(70);
+    const [bodyType, setBodyType] = useState('regular');
+
+    // Fetch initial parametric profile from the backend
     useEffect(() => {
-        const loadBaselineAvatar = async () => {
+        const loadProfile = async () => {
             try {
-                // 1. Fetch user physical profile
-                setStatusMessage('Fetching Biometrics...');
                 const profileRes = await profileClient.get('/api/v1/profiles/me');
-                const profile = profileRes.data;
-
-                // 2. Request parametric 3D generation
-                setStatusMessage('Generating Neural Avatar...');
-                const generateRes = await avatarClient.post('/api/v1/avatar/generate-from-profile', {
-                    height: profile.height,
-                    weight: profile.weight,
-                    body_type: profile.bodyType
-                });
-
-                const _taskId = generateRes.data.task_id;
-
-                // 3. Poll for result
-                const pollStatus = async () => {
-                    try {
-                        const statusRes = await avatarClient.get(`/api/v1/avatar/status/${_taskId}`);
-                        const data = statusRes.data;
-
-                        if (data.status === 'SUCCESS') {
-                            const baseUrl = import.meta.env.VITE_AI_ENGINE_API_URL || 'http://localhost:8000';
-                            setAvatarUrl(`${baseUrl}${data.result.model_url}`);
-                            setModelLoading(false);
-                            setStatusMessage('Avatar Ready');
-                        } else if (data.status === 'FAILURE') {
-                            console.error('Task failed:', data.message);
-                            setModelLoading(false);
-                            setStatusMessage('Generation Failed');
-                        } else {
-                            if (data.message) {
-                                setStatusMessage(data.message);
-                            }
-                            // Continue polling
-                            setTimeout(pollStatus, 2000);
-                        }
-                    } catch (err) {
-                        console.error('Error polling status:', err);
-                        // Retry polling on temporary network errors
-                        setTimeout(pollStatus, 3000);
-                    }
-                };
-
-                pollStatus();
-
+                if (profileRes.data) {
+                    setHeight(profileRes.data.height || 170);
+                    setWeight(profileRes.data.weight || 70);
+                    setBodyType((profileRes.data.bodyType || 'regular').toLowerCase());
+                }
             } catch (error: any) {
                 if (error.response?.status === 404) {
-                    // No profile -> Force setup
                     navigate('/setup');
-                } else {
-                    console.error('Failed to generate baseline avatar', error);
-                    setModelLoading(false);
                 }
+                console.error('Failed to load profile', error);
             }
         };
-
-        loadBaselineAvatar();
+        loadProfile();
     }, [navigate]);
 
     const handleUploadClick = () => {
         setIsGenerating(true);
         // Mock generation for photos
         setTimeout(() => {
-            setAvatarUrl('mock_url');
             setIsGenerating(false);
         }, 3000);
     };
@@ -110,23 +67,55 @@ export default function Studio() {
                             </div>
                         </div>
 
-                        <div className="space-y-5">
+                        <div className="space-y-6">
+                            {/* Height Slider */}
                             <div className="space-y-2">
                                 <div className="flex justify-between items-end">
-                                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Topological Density</span>
-                                    <span className="text-[10px] text-primary font-mono tracking-widest">HIGH / 4M POLY</span>
+                                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Height</span>
+                                    <span className="text-[11px] text-white font-mono">{height} cm</span>
                                 </div>
-                                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                    <div className="w-4/5 h-full bg-primary rounded-full" />
-                                </div>
+                                <input
+                                    type="range"
+                                    min="140"
+                                    max="220"
+                                    value={height}
+                                    onChange={(e) => setHeight(Number(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-primary"
+                                />
                             </div>
+
+                            {/* Weight Slider */}
                             <div className="space-y-2">
                                 <div className="flex justify-between items-end">
-                                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Texture Sampling</span>
-                                    <span className="text-[10px] text-blue-400 font-mono tracking-widest">4K / PBR</span>
+                                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Weight</span>
+                                    <span className="text-[11px] text-white font-mono">{weight} kg</span>
                                 </div>
-                                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                    <div className="w-full h-full bg-blue-500 rounded-full" />
+                                <input
+                                    type="range"
+                                    min="40"
+                                    max="150"
+                                    value={weight}
+                                    onChange={(e) => setWeight(Number(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+
+                            {/* Body Type Selector */}
+                            <div className="space-y-2">
+                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Body Type</span>
+                                <div className="flex gap-2 mt-2">
+                                    {['slim', 'regular', 'athletic', 'curvy'].map(type => (
+                                        <button
+                                            key={type}
+                                            onClick={() => setBodyType(type)}
+                                            className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-all ${bodyType === type
+                                                ? 'bg-primary/20 text-primary border border-primary/50'
+                                                : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
+                                                }`}
+                                        >
+                                            {type.toUpperCase()}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                         </div>
@@ -177,19 +166,6 @@ export default function Studio() {
                     backgroundPosition: 'center center'
                 }} />
 
-                {/* Loading State Overlay */}
-                {modelLoading && (
-                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0a0a0a]/80 backdrop-blur-sm transition-all duration-500">
-                        <div className="w-16 h-16 relative flex items-center justify-center mb-4">
-                            <div className="absolute inset-0 rounded-full border-t-2 border-primary animate-spin" />
-                            <div className="absolute inset-2 rounded-full border-r-2 border-blue-500 animate-[spin_1.5s_linear_infinite]" />
-                            <Cpu className="w-5 h-5 text-white/50" />
-                        </div>
-                        <p className="text-sm font-medium text-white tracking-widest uppercase">{statusMessage}</p>
-                        <p className="text-[10px] text-primary font-mono mt-2">Loading neural weights...</p>
-                    </div>
-                )}
-
                 <div className="absolute inset-0 z-10">
                     <Canvas
                         camera={{ position: [0, 1.2, 4], fov: 45 }}
@@ -202,7 +178,12 @@ export default function Studio() {
                             <spotLight position={[5, 5, 5]} angle={0.2} penumbra={1} intensity={1} castShadow />
                             <directionalLight position={[-5, 5, -5]} intensity={0.5} />
 
-                            <AvatarViewer modelUrl={avatarUrl} />
+                            <AvatarViewer
+                                modelUrl="/models/Xbot.glb"
+                                height={height}
+                                weight={weight}
+                                bodyType={bodyType}
+                            />
 
                             <ContactShadows position={[0, -1, 0]} opacity={0.4} scale={10} blur={2} far={4} />
                             <OrbitControls

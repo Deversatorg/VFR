@@ -28,6 +28,7 @@ COPY --from=builder /app/avatar_pb2_grpc.py .
 COPY main.py .
 COPY worker.py .
 COPY ml_pipeline.py .
+COPY models/ models/
 
 EXPOSE 50051
 EXPOSE 8000
