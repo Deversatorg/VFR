@@ -1,7 +1,7 @@
 import { Suspense, useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
-import { Layers, Download, Maximize, Cpu, Rotate3D, Upload } from 'lucide-react';
+import { Layers, Maximize, Cpu, Rotate3D, Upload, Shirt } from 'lucide-react';
 import AvatarViewer from '../components/3d/AvatarViewer';
 import { profileClient } from '../api/apiClients';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,9 @@ export default function Studio() {
     const [height, setHeight] = useState(170);
     const [weight, setWeight] = useState(70);
     const [bodyType, setBodyType] = useState('regular');
+    const [gender, setGender] = useState<'male' | 'female'>('male');
+    const [animation, setAnimation] = useState<'idle' | 'walk' | 'run' | 'jump' | 'tpose'>('idle');
+    const [showShirt, setShowShirt] = useState(false);
 
     // Fetch initial parametric profile from the backend
     useEffect(() => {
@@ -68,6 +71,24 @@ export default function Studio() {
                         </div>
 
                         <div className="space-y-6">
+                            {/* Gender Selector */}
+                            <div className="space-y-2">
+                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Gender Base</span>
+                                <div className="flex gap-2 mt-2">
+                                    {['male', 'female'].map(type => (
+                                        <button
+                                            key={type}
+                                            onClick={() => setGender(type as 'male' | 'female')}
+                                            className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-all ${gender === type
+                                                ? 'bg-primary/20 text-primary border border-primary/50'
+                                                : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
+                                                }`}
+                                        >
+                                            {type.toUpperCase()}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                             {/* Height Slider */}
                             <div className="space-y-2">
                                 <div className="flex justify-between items-end">
@@ -118,6 +139,42 @@ export default function Studio() {
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Animation Selector */}
+                            <div className="space-y-2 mt-6">
+                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Animation State</span>
+                                <div className="grid grid-cols-3 gap-2 mt-2">
+                                    {['idle', 'walk', 'run', 'jump', 'tpose'].map(anim => (
+                                        <button
+                                            key={anim}
+                                            onClick={() => setAnimation(anim as any)}
+                                            className={`py-1.5 rounded-lg text-[10px] items-center justify-center flex font-medium transition-all ${animation === anim
+                                                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50'
+                                                : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
+                                                }`}
+                                        >
+                                            {anim.toUpperCase()}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Wardrobe Toggles */}
+                            <div className="space-y-2 mt-4">
+                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Wardrobe</span>
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                    <button
+                                        onClick={() => setShowShirt(s => !s)}
+                                        className={`py-2 rounded-lg text-[10px] flex items-center justify-center gap-1.5 font-medium transition-all ${showShirt
+                                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                                            : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
+                                            }`}
+                                    >
+                                        <Shirt className="w-3 h-3" />
+                                        T-SHIRT
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         <button
@@ -138,10 +195,7 @@ export default function Studio() {
                             )}
                         </button>
 
-                        <button className="w-full mt-4 py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 group">
-                            <Download className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
-                            <span className="text-gray-300 group-hover:text-white transition-colors">Export .OBJ Node</span>
-                        </button>
+
                     </div>
 
                     <div className="flex-1 p-6 rounded-[2rem] bg-[#0a0a0a]/80 border border-white/[0.06] backdrop-blur-xl shadow-2xl flex flex-col items-center justify-center text-center animate-in slide-in-from-left-4 delay-75">
@@ -152,7 +206,8 @@ export default function Studio() {
                         <p className="text-gray-500 text-xs leading-relaxed max-w-[200px]">Garment physics simulation will initialize once apparel is imported.</p>
                     </div>
                 </div>
-            )}
+            )
+            }
 
             {/* Main 3D Viewport Backdrop + Canvas */}
             <div className={`flex-1 relative bg-[#0a0a0a] border border-white/[0.06] shadow-2xl overflow-hidden flex items-center justify-center group transition-all duration-500 ${isFullscreen ? 'rounded-none border-0' : 'rounded-[2.5rem]'}`}>
@@ -179,10 +234,13 @@ export default function Studio() {
                             <directionalLight position={[-5, 5, -5]} intensity={0.5} />
 
                             <AvatarViewer
-                                modelUrl="/models/Xbot.glb"
+                                modelUrl={gender === 'male' ? "/models/Male.glb" : "/models/Female.glb"}
                                 height={height}
                                 weight={weight}
                                 bodyType={bodyType}
+                                gender={gender}
+                                animation={animation}
+                                showShirt={showShirt}
                             />
 
                             <ContactShadows position={[0, -1, 0]} opacity={0.4} scale={10} blur={2} far={4} />
@@ -215,6 +273,6 @@ export default function Studio() {
                     <Maximize className="w-5 h-5" />
                 </button>
             </div>
-        </div>
+        </div >
     );
 }

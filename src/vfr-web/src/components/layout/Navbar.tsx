@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { Ruler, Activity, Camera, Settings, LogOut } from 'lucide-react';
+import { Ruler, Activity, Camera, Settings, LogOut, Shirt } from 'lucide-react';
 
 export default function Navbar() {
     const { isAuthenticated, logout } = useAuthStore();
@@ -38,6 +38,10 @@ export default function Navbar() {
                 <Link to="/studio" className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${location.pathname === '/studio' ? 'bg-white/10 text-white shadow-inner' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                     <Camera className="w-4 h-4" />
                     Studio
+                </Link>
+                <Link to="/wardrobe" className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${location.pathname === '/wardrobe' ? 'bg-white/10 text-white shadow-inner' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                    <Shirt className="w-4 h-4" />
+                    Wardrobe
                 </Link>
                 <Link to="/metrics" className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${location.pathname === '/metrics' ? 'bg-white/10 text-white shadow-inner' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
                     <Activity className="w-4 h-4" />

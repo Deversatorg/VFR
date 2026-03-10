@@ -13,3 +13,5 @@ trimesh==4.4.0
 scipy==1.13.0
 numpy==1.26.4
 pygltflib>=1.16.5
+rembg>=2.0.57
+Pillow>=10.3.0

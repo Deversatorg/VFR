@@ -5,6 +5,7 @@ import Register from './pages/Register';
 import QuickSetup from './pages/QuickSetup';
 import Home from './pages/Home';
 import Studio from './pages/Studio';
+import Wardrobe from './pages/Wardrobe';
 import Settings from './pages/Settings';
 import Technology from './pages/Technology';
 import Pricing from './pages/Pricing';
@@ -46,6 +47,7 @@ export default function App() {
 
         {/* Protected Dashboard Routes  */}
         <Route path="/studio" element={<ProtectedRoute><Studio /></ProtectedRoute>} />
+        <Route path="/wardrobe" element={<ProtectedRoute><Wardrobe /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 
         {/* Redirects */}

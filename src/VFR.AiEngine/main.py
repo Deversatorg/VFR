@@ -11,8 +11,10 @@ import logging
 import threading
 import uuid
 
+import tempfile
+
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 import avatar_pb2
@@ -62,8 +64,15 @@ import os
 
 app = FastAPI(title="VFR AI Engine", description="AI 3D Avatar Generation & Try-On Pipeline")
 
-os.makedirs(os.path.join(os.getcwd(), "avatars"), exist_ok=True)
-app.mount("/models", StaticFiles(directory=os.path.join(os.getcwd(), "avatars")), name="models")
+# Directories for static file serving
+_AVATARS_DIR  = os.path.join(os.getcwd(), "avatars")
+_GARMENTS_DIR = os.path.join(os.path.dirname(__file__), "models", "garments")
+os.makedirs(_AVATARS_DIR,  exist_ok=True)
+os.makedirs(_GARMENTS_DIR, exist_ok=True)
+
+# Mount static file directories
+app.mount("/models/garments", StaticFiles(directory=_GARMENTS_DIR), name="garments")
+app.mount("/models",          StaticFiles(directory=_AVATARS_DIR),  name="models")
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,6 +83,11 @@ app.add_middleware(
 )
 
 class AvatarGenerationResponse(BaseModel):
+    task_id: str
+    status: str
+    message: str
+
+class GarmentGenerationResponse(BaseModel):
     task_id: str
     status: str
     message: str
@@ -123,6 +137,97 @@ async def generate_avatar_from_profile(request: ProfileAvatarRequest):
         status="accepted",
         message="Parametric avatar generation task queued."
     )
+
+@app.post("/api/v1/garment/generate", response_model=GarmentGenerationResponse)
+async def generate_garment(
+    file: UploadFile = File(...),
+    primitive_type: str = Form(...)
+):
+    """
+    Accepts a 2D clothing image and a primitive type (e.g. 'tshirt', 'hoodie').
+    Dispatches a Celery task to:
+      1. Remove the background from the clothing photo.
+      2. Process and centre the texture on a 1024x1024 canvas.
+      3. Inject it into the matching base GLB primitive.
+    Returns a task_id to poll via GET /api/v1/garment/status/{task_id}.
+
+    NOTE: We save the upload to a temporary file and pass the *path* to Celery,
+    not raw bytes — Celery's JSON serialiser cannot handle binary payloads.
+    The worker cleans up the temp file after processing.
+    """
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File provided is not an image.")
+
+    valid_primitives = ["tshirt", "hoodie", "pants", "jacket"]
+    if primitive_type.lower() not in valid_primitives:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown primitive_type '{primitive_type}'. Valid options: {valid_primitives}"
+        )
+
+    task_id = str(uuid.uuid4())
+
+    # Persist the upload to a temp file so the Celery worker can read it.
+    # We use a named temp file with delete=False so the path remains valid
+    # after this request handler exits (the worker deletes it when done).
+    tmp_dir = tempfile.gettempdir()
+    temp_image_path = os.path.join(tmp_dir, f"upload_{task_id}.png")
+    image_bytes = await file.read()
+    with open(temp_image_path, "wb") as tmp_file:
+        tmp_file.write(image_bytes)
+    logger.info("Garment upload saved to temp: %s", temp_image_path)
+
+    from worker import generate_garment_3d
+    task = generate_garment_3d.apply_async(
+        args=[task_id, primitive_type.lower(), temp_image_path],
+        task_id=task_id
+    )
+
+    return GarmentGenerationResponse(
+        task_id=task.id,
+        status="accepted",
+        message=f"Garment texture generation for '{primitive_type}' has been queued."
+    )
+
+@app.get("/api/v1/garment/status/{task_id}")
+async def get_garment_status(task_id: str):
+    """Poll the status of a garment generation task. Same shape as the avatar status endpoint."""
+    from worker import celery_app
+    from celery.result import AsyncResult
+
+    try:
+        res = AsyncResult(task_id, app=celery_app)
+        state = res.state
+
+        response = {
+            "task_id": task_id,
+            "status": state,
+            "progress": 0,
+            "message": ""
+        }
+
+        if state == 'PENDING':
+            response['message'] = 'Task is waiting for a worker...'
+        elif state == 'PROGRESS':
+            if isinstance(res.info, dict):
+                response['progress'] = res.info.get('progress', 0)
+                response['message'] = res.info.get('message', '')
+        elif state == 'SUCCESS':
+            response['progress'] = 100
+            response['message'] = "Completed"
+            response['result'] = res.result
+        elif state == 'FAILURE':
+            response['message'] = str(res.result)
+
+        return response
+    except Exception as e:
+        logger.error(f"Error parsing Celery state for garment task {task_id}: {str(e)}")
+        return {
+            "task_id": task_id,
+            "status": "FAILURE",
+            "progress": 0,
+            "message": f"Worker result parsing error: {str(e)}"
+        }
 
 @app.get("/api/v1/avatar/status/{task_id}")
 async def get_avatar_status(task_id: str):
