@@ -59,6 +59,9 @@ coverage.xml
 .mypy_cache/
 .pytest_cache/
 
+# Large ML Models
+*.npz
+
 # User-specific
 appsettings.Development.json
 appsettings.json

@@ -96,6 +96,7 @@ class ProfileAvatarRequest(BaseModel):
     height: float
     weight: float
     body_type: str
+    gender: str = 'neutral'  # 'male', 'female', or 'neutral'
 
 @app.get("/")
 def read_root():
@@ -128,7 +129,7 @@ async def generate_avatar_from_profile(request: ProfileAvatarRequest):
     
     from worker import generate_3d_avatar_from_profile
     task = generate_3d_avatar_from_profile.apply_async(
-        args=[task_id, request.height, request.weight, request.body_type], 
+        args=[task_id, request.height, request.weight, request.body_type, request.gender],
         task_id=task_id
     )
 

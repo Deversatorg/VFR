@@ -1,14 +1,19 @@
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
-import { Layers, Maximize, Cpu, Rotate3D, Upload, Shirt } from 'lucide-react';
+import { Layers, Maximize, Cpu, Rotate3D, Upload, Shirt, Sparkles, AlertCircle } from 'lucide-react';
 import AvatarViewer from '../components/3d/AvatarViewer';
-import { profileClient } from '../api/apiClients';
+import { profileClient, avatarClient } from '../api/apiClients';
 import { useNavigate } from 'react-router-dom';
+
+const AVATAR_API_URL = import.meta.env.VITE_AI_ENGINE_API_URL || 'http://localhost:8000';
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLLS = 60; // 2 min timeout
+
+type GenStatus = 'idle' | 'pending' | 'success' | 'error';
 
 export default function Studio() {
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [isGenerating, setIsGenerating] = useState(false);
     const navigate = useNavigate();
 
     // Parametric controls state
@@ -18,6 +23,19 @@ export default function Studio() {
     const [gender, setGender] = useState<'male' | 'female'>('male');
     const [animation, setAnimation] = useState<'idle' | 'walk' | 'run' | 'jump' | 'tpose'>('idle');
     const [showShirt, setShowShirt] = useState(false);
+
+    // Avatar generation state
+    const [avatarUrl, setAvatarUrl]       = useState<string | null>(null);
+    const [genStatus, setGenStatus]       = useState<GenStatus>('idle');
+    const [genProgress, setGenProgress]   = useState(0);
+    const [genError, setGenError]         = useState<string | null>(null);
+    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pollCountRef = useRef(0);
+
+    const stopPolling = useCallback(() => {
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        pollCountRef.current = 0;
+    }, []);
 
     // Fetch initial parametric profile from the backend
     useEffect(() => {
@@ -30,21 +48,74 @@ export default function Studio() {
                     setBodyType((profileRes.data.bodyType || 'regular').toLowerCase());
                 }
             } catch (error: any) {
-                if (error.response?.status === 404) {
-                    navigate('/setup');
-                }
+                if (error.response?.status === 404) { navigate('/setup'); }
                 console.error('Failed to load profile', error);
             }
         };
         loadProfile();
     }, [navigate]);
 
+    // Reset generated avatar when gender changes
+    useEffect(() => { setAvatarUrl(null); }, [gender]);
+
+    // Cleanup polling on unmount
+    useEffect(() => () => stopPolling(), [stopPolling]);
+
+    const handleGenerateAvatar = async () => {
+        setGenStatus('pending');
+        setGenProgress(5);
+        setGenError(null);
+        stopPolling();
+
+        let taskId: string;
+        try {
+            const res = await avatarClient.post('/api/v1/avatar/generate-from-profile', {
+                height, weight, body_type: bodyType, gender,
+            });
+            taskId = res.data.task_id;
+        } catch (err: any) {
+            setGenStatus('error');
+            setGenError('Failed to queue avatar generation.');
+            return;
+        }
+
+        pollCountRef.current = 0;
+        pollRef.current = setInterval(async () => {
+            pollCountRef.current += 1;
+            if (pollCountRef.current > MAX_POLLS) {
+                stopPolling();
+                setGenStatus('error');
+                setGenError('Generation timed out. Please try again.');
+                return;
+            }
+
+            try {
+                const statusRes = await avatarClient.get(`/api/v1/avatar/status/${taskId}`);
+                const { status, progress, result } = statusRes.data;
+
+                if (status === 'PROGRESS' || status === 'STARTED') {
+                    setGenProgress(Math.max(10, Math.min(90, progress ?? 50)));
+                } else if (status === 'SUCCESS') {
+                    stopPolling();
+                    const raw = result.model_url as string;
+                    // Pipeline returns a full https:// S3 URL; fallback returns a relative /models/... path
+                    const fullUrl = raw.startsWith('http') ? raw : `${AVATAR_API_URL}${raw}`;
+                    setAvatarUrl(fullUrl);
+                    setGenProgress(100);
+                    setGenStatus('success');
+                } else if (status === 'FAILURE') {
+                    stopPolling();
+                    setGenStatus('error');
+                    setGenError(statusRes.data.message || 'Generation failed.');
+                }
+            } catch {
+                // transient error — keep polling
+            }
+        }, POLL_INTERVAL_MS);
+    };
+
     const handleUploadClick = () => {
-        setIsGenerating(true);
-        // Mock generation for photos
-        setTimeout(() => {
-            setIsGenerating(false);
-        }, 3000);
+        // Photo upload — separate future feature; keep as-is
     };
 
     return (
@@ -75,10 +146,10 @@ export default function Studio() {
                             <div className="space-y-2">
                                 <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Gender Base</span>
                                 <div className="flex gap-2 mt-2">
-                                    {['male', 'female'].map(type => (
+                                    {(['male', 'female'] as const).map(type => (
                                         <button
                                             key={type}
-                                            onClick={() => setGender(type as 'male' | 'female')}
+                                            onClick={() => setGender(type)}
                                             className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-all ${gender === type
                                                 ? 'bg-primary/20 text-primary border border-primary/50'
                                                 : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
@@ -177,22 +248,40 @@ export default function Studio() {
                             </div>
                         </div>
 
+                        {/* Generate Avatar Button */}
                         <button
-                            onClick={handleUploadClick}
-                            disabled={isGenerating}
+                            onClick={handleGenerateAvatar}
+                            disabled={genStatus === 'pending'}
                             className="w-full mt-6 py-3 bg-gradient-to-r from-primary to-blue-600 hover:from-primary/80 hover:to-blue-600/80 disabled:opacity-50 border border-transparent rounded-xl text-white font-medium shadow-lg transition-all flex items-center justify-center gap-2"
                         >
-                            {isGenerating ? (
+                            {genStatus === 'pending' ? (
                                 <>
                                     <Cpu className="w-5 h-5 animate-spin" />
-                                    <span>Generating 3D Avatar...</span>
+                                    <span>Generating... {genProgress}%</span>
                                 </>
                             ) : (
                                 <>
-                                    <Upload className="w-5 h-5" />
-                                    <span>Upload Photo</span>
+                                    <Sparkles className="w-5 h-5" />
+                                    <span>{genStatus === 'success' ? 'Regenerate Avatar' : 'Generate Avatar'}</span>
                                 </>
                             )}
+                        </button>
+
+                        {/* Error message */}
+                        {genStatus === 'error' && genError && (
+                            <div className="mt-3 flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                                <p className="text-[11px] text-red-400 leading-relaxed">{genError}</p>
+                            </div>
+                        )}
+
+                        {/* Upload Photo (secondary) */}
+                        <button
+                            onClick={handleUploadClick}
+                            className="w-full mt-2 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-gray-400 text-[11px] font-medium transition-all flex items-center justify-center gap-2"
+                        >
+                            <Upload className="w-4 h-4" />
+                            <span>Upload Photo (coming soon)</span>
                         </button>
 
 
@@ -234,7 +323,8 @@ export default function Studio() {
                             <directionalLight position={[-5, 5, -5]} intensity={0.5} />
 
                             <AvatarViewer
-                                modelUrl={gender === 'male' ? "/models/Male.glb" : "/models/Female.glb"}
+                                key={avatarUrl ?? gender}
+                                modelUrl={avatarUrl ?? (gender === 'male' ? '/models/Male.glb' : '/models/Female.glb')}
                                 height={height}
                                 weight={weight}
                                 bodyType={bodyType}
@@ -257,6 +347,26 @@ export default function Studio() {
                         </Suspense>
                     </Canvas>
                 </div>
+
+                {/* Generation progress bar */}
+                {genStatus === 'pending' && (
+                    <div className="absolute bottom-0 left-0 right-0 z-30 h-[3px] bg-white/5">
+                        <div
+                            className="h-full bg-gradient-to-r from-primary to-blue-500 transition-all duration-700"
+                            style={{ width: `${genProgress}%` }}
+                        />
+                    </div>
+                )}
+
+                {/* Success badge */}
+                {genStatus === 'success' && (
+                    <div className="absolute top-6 right-16 z-20">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 backdrop-blur-md border border-emerald-500/30">
+                            <Sparkles className="w-3 h-3 text-emerald-400" />
+                            <span className="text-[10px] font-mono text-emerald-400 tracking-widest uppercase">AI Generated</span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Viewport UI Overlays */}
                 <div className="absolute top-6 left-6 z-20 pointer-events-none">

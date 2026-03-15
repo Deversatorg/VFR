@@ -24,28 +24,18 @@ celery_app.conf.update(
 
 @celery_app.task(bind=True, name="generate_3d_avatar")
 def generate_3d_avatar(self, task_id: str, image_bytes: bytes):
-    """
-    Celery task that runs the heavy ML prediction on GPU (or simulated via sleep here)
-    """
-    print(f"[{task_id}] Starting avatar generation task in worker...")
-    self.update_state(state='PROGRESS', meta={'progress': 10, 'message': 'Initializing models'})
-    
+    """Image-based avatar generation (future). Returns S3 URL."""
+    print(f"[{task_id}] Starting image-based avatar generation...")
+    self.update_state(state='PROGRESS', meta={'progress': 10, 'message': 'Initialising models...'})
+
     try:
-        # Pass to the pipeline (we update state along the way ideally, but here we just run it)
-        output_glb_path = run_avatar_generation(image_bytes)
-        
-        # Move the generated file to the static avatars folder
-        avatars_dir = os.path.join(os.getcwd(), "avatars")
-        os.makedirs(avatars_dir, exist_ok=True)
-        final_path = os.path.join(avatars_dir, f"{task_id}.glb")
-        shutil.move(output_glb_path, final_path)
-        
-        model_url = f"/models/{task_id}.glb"
-        
+        # pipeline uploads to S3 and returns the public URL
+        model_url = run_avatar_generation(image_bytes)
+
+        self.update_state(state='PROGRESS', meta={'progress': 95, 'message': 'Finalising...'})
         return {
             "status": "completed",
             "model_url": model_url,
-            "local_path": final_path,
             "message": "Avatar generated successfully."
         }
     except Exception as e:
@@ -53,29 +43,20 @@ def generate_3d_avatar(self, task_id: str, image_bytes: bytes):
         raise Exception(str(e))
 
 @celery_app.task(bind=True, name="generate_3d_avatar_from_profile")
-def generate_3d_avatar_from_profile(self, task_id: str, height: float, weight: float, body_type: str):
-    """
-    Celery task that runs the ML generation purely using mathematical profile params.
-    """
-    print(f"[{task_id}] Starting parametric avatar generation in worker...")
-    self.update_state(state='PROGRESS', meta={'progress': 10, 'message': 'Mapping profile to SMPL betas...'})
-    
+def generate_3d_avatar_from_profile(self, task_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral'):
+    """Parametric SMPL-X avatar generation. Returns S3 public URL."""
+    print(f"[{task_id}] Starting parametric avatar generation (gender={gender})...")
+    self.update_state(state='PROGRESS', meta={'progress': 10, 'message': f'Running SMPL-X ({gender})...'})
+
     try:
-        output_glb_path = run_avatar_generation_from_profile(height, weight, body_type)
-        
-        # Move the generated file to the static avatars folder
-        avatars_dir = os.path.join(os.getcwd(), "avatars")
-        os.makedirs(avatars_dir, exist_ok=True)
-        final_path = os.path.join(avatars_dir, f"profile_{task_id}.glb")
-        shutil.move(output_glb_path, final_path)
-        
-        model_url = f"/models/profile_{task_id}.glb"
-        
+        # pipeline generates the mesh, uploads to S3, and returns the public URL
+        model_url = run_avatar_generation_from_profile(height, weight, body_type, gender)
+
+        self.update_state(state='PROGRESS', meta={'progress': 95, 'message': 'Finalising...'})
         return {
             "status": "completed",
             "model_url": model_url,
-            "local_path": final_path,
-            "message": "Parametric Avatar generated successfully."
+            "message": f"Avatar generated successfully (SMPL-X, gender={gender})."
         }
     except Exception as e:
         self.update_state(state='FAILURE', meta={'error': str(e)})

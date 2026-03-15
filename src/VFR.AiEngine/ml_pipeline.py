@@ -1,206 +1,212 @@
 import io
+# Force OpenMP to use 1 thread to avoid deadlocks in forked Celery processes
+import os
+os.environ['OMP_NUM_THREADS'] = '1'
 import time
 import uuid
 import logging
-from typing import Tuple
+from typing import TYPE_CHECKING, Tuple, Any, Optional
+from dotenv import load_dotenv
+
+load_dotenv()  # reads .env locally; no-op when env vars are already injected by Aspire
+
+if TYPE_CHECKING:
+    import torch
+    import trimesh
 
 try:
     import torch
     import smplx
     import trimesh
     import numpy as np
-    from scipy.spatial import cKDTree
-    from pygltflib import GLTF2, Scene as GLTFScene, Node, Mesh, Primitive, Attributes, Buffer, BufferView, Accessor, Asset
+    from pygltflib import GLTF2
     HAS_ML_DEPS = True
 except ImportError:
     HAS_ML_DEPS = False
+
+from s3_client import upload_glb  # S3 upload helper
 
 logger = logging.getLogger("AvatarML")
 
 class AvatarMLPipeline:
     def __init__(self):
         logger.info("Initializing ML Pipeline...")
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        
+        self._smpl_models: dict = {}   # cache: gender → smplx model
+        self.pose_estimator = None
+
         if HAS_ML_DEPS:
+            import os
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             logger.info(f"Using device: {self.device}")
-            # In a real environment, we'd load the SMPL-X model here:
-            # self.smpl_model = smplx.create(model_path='models/smplx', model_type='smplx',
-            #                              gender='neutral', use_face_contour=False,
-            #                              num_betas=10, num_expression_coeffs=10).to(self.device)
-            #
-            # self.pose_estimator = CLIFF_Model.load_from_checkpoint('weights/cliff.ckpt').to(self.device)
-            self.smpl_model = None
-            self.pose_estimator = None
+            # smplx.create() automatically appends the model_type (e.g., 'smplx')
+            # to the provided path, so we only point to the base models folder.
+            self.model_path = os.path.join(os.path.dirname(__file__), 'models')
+            # Pre-load neutral to validate the model files exist at startup.
+            self._get_smpl_model('neutral')
         else:
+            self.device = 'cpu'
+            self.model_path = None
             logger.warning("ML dependencies (torch, smplx, trimesh) not installed. Using mock mode.")
 
-    def _estimate_pose_and_shape(self, image_bytes: bytes) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _get_smpl_model(self, gender: str):
+        """Returns a cached SMPL-X model for the given gender, loading it on first use.
+        Falls back to 'neutral' if the gender-specific .npz file is not available.
         """
-        Takes an image and uses a CNN/Transformer (like CLIFF or HMR 2.0) to predict:
-        - betas: Shape parameters (thickness, height)
-        - body_pose: Joint rotations
-        """
-        logger.info("Predicting SMPL parameters (betas, pose)...")
-        if self.pose_estimator:
-            # image_tensor = preprocess(image_bytes)
-            # pred_rotmat, pred_betas, _ = self.pose_estimator(image_tensor)
-            # return pred_betas, pred_rotmat
-            pass
-            
-        # Mock tensors for structural demonstration
-        # 1 person, 10 shape params
-        mock_betas = torch.zeros([1, 10], dtype=torch.float32, device=self.device) 
-        # 1 person, 21 body joints, 3x3 rotation matrices
-        mock_body_pose = torch.eye(3, device=self.device).expand(1, 21, 3, 3) 
-        return mock_betas, mock_body_pose
+        if not HAS_ML_DEPS:
+            return None
+        gender = gender.lower()
+        # SMPL-X supports 'male', 'female', 'neutral'
+        if gender not in ('male', 'female', 'neutral'):
+            gender = 'neutral'
+        if gender not in self._smpl_models:
+            try:
+                logger.info(f"Loading SMPL-X model (gender={gender})...")
+                model = smplx.create(
+                    model_path=self.model_path,
+                    model_type='smplx',
+                    gender=gender,
+                    num_betas=10,
+                    use_face_contour=False,
+                    ext='npz'
+                ).to(self.device)
+                self._smpl_models[gender] = model
+                logger.info(f"SMPL-X model loaded successfully (gender={gender}).")
+            except Exception as e:
+                logger.warning(f"SMPL-X model for gender='{gender}' not found: {e}")
+                # Fall back to neutral if the gender-specific file is missing
+                if gender != 'neutral':
+                    logger.info("Falling back to neutral SMPL-X model...")
+                    self._smpl_models[gender] = self._get_smpl_model('neutral')
+                else:
+                    logger.error("Neutral SMPL-X model also unavailable. Will use Xbot fallback.")
+                    self._smpl_models[gender] = None
+        return self._smpl_models[gender]
 
-    def _generate_body_mesh(self, betas: torch.Tensor, body_pose: torch.Tensor) -> trimesh.Trimesh:
+    def _simulate_profile_betas(self, height_cm: float, weight_kg: float, body_type: str) -> Any:
         """
-        Passes parameters through the SMPL-X differentiable layer to construct the 3D human mesh.
-        If SMPL-X is missing, falls back to the high-poly Xbot GLB mannequin.
+        BMI-based mapping of physical metrics to SMPL-X shape betas.
         """
-        logger.info("Generating 3D body vertices...")
-        if self.smpl_model:
-            # output = self.smpl_model(betas=betas, body_pose=body_pose)
-            # vertices = output.vertices.detach().cpu().numpy().squeeze()
-            # faces = self.smpl_model.faces
-            # return trimesh.Trimesh(vertices, faces, process=False)
-            pass
-            
-        return None  # We bypass Trimesh generation for the fallback now
+        # Calculate standard BMI
+        height_m = height_cm / 100.0
+        bmi = weight_kg / (height_m ** 2)
+
+        betas = torch.zeros((1, 10), dtype=torch.float32)
+
+        # betas[0] controls overall weight/thickness. Normal BMI is ~22.
+        # Scale proportional to (BMI - 22)
+        betas[0, 0] = (bmi - 22.0) * 0.4
+
+        # betas[1] controls weight distribution (waist-to-hip / chest).
+        b_type = body_type.lower()
+        if b_type == 'slim':
+            betas[0, 1] = -1.5
+            betas[0, 2] = 0.0
+        elif b_type == 'curvy':
+            betas[0, 1] = 1.5
+            betas[0, 2] = 1.0
+        elif b_type == 'athletic':
+            betas[0, 1] = 0.5
+            betas[0, 2] = -1.5
+        else: # average
+            betas[0, 1] = 0.0
+            betas[0, 2] = 0.0
+
+        logger.info(
+            f"Profile betas — h={height_cm}cm, w={weight_kg}kg, BMI={bmi:.1f}, "
+            f"type={body_type}: {betas[0, :3].tolist()}"
+        )
+        return torch.tensor(betas, dtype=torch.float32).to(self.device)
+
+    def _generate_smplx_glb(self, betas: Any, output_path: str, gender: str = 'neutral') -> str:
+        """
+        Runs the SMPL-X forward pass, exports the mesh as GLB, uploads to S3.
+        Returns the public S3 URL (or local path when S3 is unavailable).
+        """
+        import os
+        smpl_model = self._get_smpl_model(gender)
+        if smpl_model is None:
+            raise RuntimeError(f"SMPL-X model for gender='{gender}' is not available.")
+
+        logger.info(f"Running SMPL-X forward pass (gender={gender})...")
+
+        if torch.is_tensor(betas):
+            betas = betas.clone().detach().to(dtype=torch.float32, device=self.device)
+        else:
+            betas = torch.tensor(betas, dtype=torch.float32, device=self.device)
+
+        with torch.no_grad():
+            output = smpl_model(betas=betas, return_verts=True)
+
+        verts = output.vertices[0].detach().cpu().numpy()   # (N, 3)
+        faces = smpl_model.faces                             # (F, 3)
+
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+
+        # Rotate 180 degrees around X-axis
+        import numpy as np
+        import trimesh.transformations as tf
+        matrix = tf.rotation_matrix(np.pi, [1, 0, 0])
+        # Note: if it was upside down due to this very rotation being applied previously,
+        # we still apply it exactly as requested (which mirrors the old rotation).
+        # We also rotate 180 degrees around Z-axis so it faces the camera if it's currently facing away.
+        # But per the exact request:
+        mesh.apply_transform(matrix)
+
+        os.makedirs(os.path.dirname(output_path) or '/tmp', exist_ok=True)
+        mesh.export(output_path, file_type='glb')
+        logger.info(f"SMPL-X mesh exported to {output_path} "
+                    f"({len(verts)} verts, {len(faces)} faces)")
+
+        # Upload to S3 and return public URL
+        s3_key = f"avatars/{os.path.basename(output_path)}"
+        return upload_glb(output_path, s3_key)
+
+
+
+    def process_profile(self, height_cm: float, weight_kg: float, body_type: str, gender: str = 'neutral') -> str:
+        """
+        Main Pipeline Entrypoint for Parametric Generation.
+        Returns a public S3 URL (or local path when S3 is unavailable).
+        """
+        try:
+            logger.info(
+                f"Processing parametric profile: h={height_cm}, w={weight_kg}, "
+                f"type={body_type}, gender={gender}"
+            )
+
+            betas = self._simulate_profile_betas(height_cm, weight_kg, body_type)
+
+            file_id = str(uuid.uuid4())
+            tmp_path = f"/tmp/profile_{file_id}.glb"
+
+            smpl_model = self._get_smpl_model(gender)
+            if smpl_model is not None:
+                logger.info(f"Using real SMPL-X pipeline (gender={gender})...")
+                public_url = self._generate_smplx_glb(betas, tmp_path, gender=gender)
+            else:
+                raise RuntimeError(f"SMPL-X unavailable for gender='{gender}' and neutral fallback also failed.")
+
+            logger.info(f"Avatar available at: {public_url}")
+            return public_url
+
+        except Exception as e:
+            logger.error(f"Profile Pipeline failed: {str(e)}")
+            raise
 
     def process_image(self, image_bytes: bytes) -> str:
         """
-        Main Pipeline Entrypoint: Takes image, runs pipelines, exports GLB.
+        Image-based Pipeline Entrypoint (Phase 4+).
+        Currently a stub that falls back to the scaled mannequin.
+        Replace with CLIFF / HMR 2.0 pose estimator in production.
         """
         try:
-            betas, body_pose = self._estimate_pose_and_shape(image_bytes)
-            
-            file_id = str(uuid.uuid4())
-            output_path = f"/tmp/{file_id}.glb"
-            logger.info(f"Assembling Scene and exporting to {output_path}...")
-            
-            time.sleep(2) # Simulate GPU compute delay
-            
-            if self.smpl_model:
-                pass # Original Trimesh export logic goes here when SMPL-X is active 
-                
-            # FALLBACK: Use high-poly Xbot mannequin
-            self._generate_scaled_mannequin_glb(betas, output_path)
-            
-            return output_path
-            
+            logger.info("Image pipeline called — returning invalid URL since HMR not implemented yet.")
+            return "error://image_pipeline_not_implemented"
+
         except Exception as e:
-            logger.error(f"Pipeline failed: {str(e)}")
-            raise e
+            logger.error(f"Image Pipeline failed: {str(e)}")
+            raise
 
-    def _generate_scaled_mannequin_glb(self, betas: torch.Tensor, output_path: str):
-        """
-        Loads the high-poly base mannequin, scales it based on heuristic betas, 
-        and saves it using pygltflib to preserve materials and skeletons.
-        """
-        import os
-        base_glb_path = os.path.join(os.path.dirname(__file__), "models", "Xbot.glb")
-        
-        if not os.path.exists(base_glb_path):
-            logger.warning("Xbot.glb not found! Using minimal fallback.")
-            minimal_glb = b'glTF\x02\x00\x00\x00\x0c\x00\x00\x00'
-            with open(output_path, 'wb') as f:
-                f.write(minimal_glb)
-            return
-
-        logger.info(f"Loading Base Mannequin from {base_glb_path}...")
-        gltf = GLTF2().load(base_glb_path)
-        
-        # Calculate scale multipliers
-        height_factor = float(betas[0, 0].item()) * 0.05
-        weight_factor = float(betas[0, 1].item()) * 0.01
-        
-        y_scale = 1.0 + height_factor  # Height translation
-        xz_scale = 1.0 + weight_factor # Girth/Width translation
-        
-        logger.info(f"Scaling mannequin by: XZ={xz_scale:.2f}, Y={y_scale:.2f}")
-        
-        # Apply scale strictly to the root nodes of the active scene
-        scene = gltf.scenes[gltf.scene]
-        for node_idx in scene.nodes:
-            node = gltf.nodes[node_idx]
-            # Pygltflib node.scale defaults to None if it's [1,1,1] in the file
-            if node.scale is None:
-                node.scale = [1.0, 1.0, 1.0]
-            
-            node.scale[0] *= xz_scale
-            node.scale[1] *= y_scale
-            node.scale[2] *= xz_scale
-            
-        gltf.save(output_path)
-        logger.info(f"Scaled mannequin exported successfully!")
-
-    def _simulate_profile_betas(self, height_cm: float, weight_kg: float, body_type: str) -> torch.Tensor:
-        """
-        Heuristic mapping of physical metrics to SMPL betas.
-        Beta[0] strongly correlates with height/scale.
-        Beta[1] strongly correlates with weight/girth.
-        Beta[2] correlates with muscle/fat distribution.
-        """
-        betas = torch.zeros([1, 10], dtype=torch.float32, device=self.device)
-        
-        # Base approximations
-        base_height_cm = 170.0
-        base_weight_kg = 70.0
-
-        # Heuristic 1: Height affects beta[0] linearly. 
-        # (Usually 1 unit of beta[0] is roughly 5cm difference)
-        height_diff = height_cm - base_height_cm
-        betas[0, 0] = height_diff / 5.0
-
-        # Heuristic 2: Weight affects beta[1]
-        bmi = weight_kg / ((height_cm / 100) ** 2)
-        target_bmi = 24.2 # Base BMI
-        bmi_diff = bmi - target_bmi
-        betas[0, 1] = bmi_diff * 0.4 
-        
-        # Heuristic 3: Body Type affects local components
-        bt_lower = body_type.lower()
-        if 'slim' in bt_lower:
-            betas[0, 2] -= 1.5 # Less volume overall
-        elif 'athletic' in bt_lower:
-            betas[0, 2] += 1.0 # More muscle definition
-            betas[0, 3] -= 0.5 # Less fat
-        elif 'plussize' in bt_lower or 'heavy' in bt_lower:
-            betas[0, 2] += 2.0 # More overall volume
-            
-        logger.info(f"Generated heuristic Betas for {height_cm}cm, {weight_kg}kg, {body_type}: {betas[0,:3].tolist()}...")
-        return betas
-
-    def process_profile(self, height_cm: float, weight_kg: float, body_type: str) -> str:
-        """
-        Main Pipeline Entrypoint for Parametric Generation (No Image)
-        """
-        try:
-            logger.info(f"Processing parametric profile: h={height_cm}, w={weight_kg}, type={body_type}")
-            
-            # 1. Body Estimation purely from math
-            betas = self._simulate_profile_betas(height_cm, weight_kg, body_type)
-            
-            file_id = str(uuid.uuid4())
-            output_path = f"/tmp/profile_{file_id}.glb"
-            logger.info(f"Assembling Scene and exporting to {output_path}...")
-            
-            time.sleep(2) # Simulate CPU/GPU processing
-            
-            if self.smpl_model:
-                pass # Original SMPL-X generation goes here
-            
-            # FALLBACK: Use high-poly Xbot mannequin 
-            self._generate_scaled_mannequin_glb(betas, output_path)
-                    
-            return output_path
-            
-        except Exception as e:
-            logger.error(f"Profile Pipeline failed: {str(e)}")
-            raise e
 
 # Singleton instance for the worker
 pipeline_instance = AvatarMLPipeline()
@@ -208,6 +214,6 @@ pipeline_instance = AvatarMLPipeline()
 def run_avatar_generation(image_bytes: bytes) -> str:
     return pipeline_instance.process_image(image_bytes)
 
-def run_avatar_generation_from_profile(height: float, weight: float, body_type: str) -> str:
+def run_avatar_generation_from_profile(height: float, weight: float, body_type: str, gender: str = 'neutral') -> str:
     """Wrapper for generating avatar purely from profile parameters"""
-    return pipeline_instance.process_profile(height, weight, body_type)
+    return pipeline_instance.process_profile(height, weight, body_type, gender)
