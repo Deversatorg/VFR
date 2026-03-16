@@ -84,3 +84,21 @@ def upload_glb(local_path: str, s3_key: str) -> str:
     except Exception as e:
         logger.error(f"S3 upload failed for {s3_key}: {e}")
         raise
+
+
+def delete_old_user_avatars(user_id: str):
+    """
+    Deletes any existing objects in the bucket that start with avatars/profile_{user_id}_.
+    """
+    if s3_client is None:
+        return
+        
+    prefix = f"avatars/profile_{user_id}_"
+    try:
+        response = s3_client.list_objects_v2(Bucket=S3_BUCKET_NAME, Prefix=prefix)
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=obj['Key'])
+                logger.info(f"Deleted old avatar: {obj['Key']}")
+    except Exception as e:
+        logger.warning(f"Failed to delete old avatars for {user_id}: {e}")

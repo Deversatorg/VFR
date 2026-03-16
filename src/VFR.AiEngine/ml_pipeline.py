@@ -99,14 +99,14 @@ class AvatarMLPipeline:
         # betas[1] controls weight distribution (waist-to-hip / chest).
         b_type = body_type.lower()
         if b_type == 'slim':
-            betas[0, 1] = -1.5
-            betas[0, 2] = 0.0
-        elif b_type == 'curvy':
             betas[0, 1] = 1.5
+            betas[0, 2] = 0.0
+        elif b_type == 'curvy' or b_type == 'stout':
+            betas[0, 1] = -1.5
             betas[0, 2] = 1.0
         elif b_type == 'athletic':
             betas[0, 1] = 0.5
-            betas[0, 2] = -1.5
+            betas[0, 2] = -1.0
         else: # average
             betas[0, 1] = 0.0
             betas[0, 2] = 0.0
@@ -117,7 +117,7 @@ class AvatarMLPipeline:
         )
         return torch.tensor(betas, dtype=torch.float32).to(self.device)
 
-    def _generate_smplx_glb(self, betas: Any, output_path: str, gender: str = 'neutral') -> str:
+    def _generate_smplx_glb(self, betas: Any, output_path: str, gender: str = 'neutral', target_height_m: float = 1.70) -> str:
         """
         Runs the SMPL-X forward pass, exports the mesh as GLB, uploads to S3.
         Returns the public S3 URL (or local path when S3 is unavailable).
@@ -140,17 +140,23 @@ class AvatarMLPipeline:
         verts = output.vertices[0].detach().cpu().numpy()   # (N, 3)
         faces = smpl_model.faces                             # (F, 3)
 
+        # Scale mesh to precise target height
+        current_height = verts[:, 1].max() - verts[:, 1].min()
+        scale = target_height_m / current_height
+        verts = verts * scale
+
         mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
 
-        # Rotate 180 degrees around X-axis
         import numpy as np
         import trimesh.transformations as tf
-        matrix = tf.rotation_matrix(np.pi, [1, 0, 0])
-        # Note: if it was upside down due to this very rotation being applied previously,
-        # we still apply it exactly as requested (which mirrors the old rotation).
-        # We also rotate 180 degrees around Z-axis so it faces the camera if it's currently facing away.
-        # But per the exact request:
+        
+        # Rotate 180 degrees around Y-axis so it faces the camera
+        matrix = tf.rotation_matrix(np.pi, [0, 1, 0])
         mesh.apply_transform(matrix)
+        
+        # Center the mesh so its lowest point (feet) is at Y=0
+        min_y = mesh.vertices[:, 1].min()
+        mesh.apply_translation([0, -min_y, 0])
 
         os.makedirs(os.path.dirname(output_path) or '/tmp', exist_ok=True)
         mesh.export(output_path, file_type='glb')
@@ -159,30 +165,41 @@ class AvatarMLPipeline:
 
         # Upload to S3 and return public URL
         s3_key = f"avatars/{os.path.basename(output_path)}"
-        return upload_glb(output_path, s3_key)
+        public_url = upload_glb(output_path, s3_key)
+        
+        return public_url
 
 
 
-    def process_profile(self, height_cm: float, weight_kg: float, body_type: str, gender: str = 'neutral') -> str:
+    def process_profile(self, user_id: str, height_cm: float, weight_kg: float, body_type: str, gender: str = 'neutral') -> str:
         """
         Main Pipeline Entrypoint for Parametric Generation.
         Returns a public S3 URL (or local path when S3 is unavailable).
         """
         try:
             logger.info(
-                f"Processing parametric profile: h={height_cm}, w={weight_kg}, "
+                f"Processing parametric profile: user={user_id}, h={height_cm}, w={weight_kg}, "
                 f"type={body_type}, gender={gender}"
             )
 
             betas = self._simulate_profile_betas(height_cm, weight_kg, body_type)
 
-            file_id = str(uuid.uuid4())
-            tmp_path = f"/tmp/profile_{file_id}.glb"
+            import re
+            import time
+            from s3_client import delete_old_user_avatars
+            
+            safe_user_id = re.sub(r'[^a-zA-Z0-9_\-]', '', user_id)
+            timestamp = int(time.time())
+            tmp_path = f"/tmp/profile_{safe_user_id}_{timestamp}.glb"
+
+            # Delete the previous unique file(s) for this user to save space
+            delete_old_user_avatars(safe_user_id)
 
             smpl_model = self._get_smpl_model(gender)
             if smpl_model is not None:
                 logger.info(f"Using real SMPL-X pipeline (gender={gender})...")
-                public_url = self._generate_smplx_glb(betas, tmp_path, gender=gender)
+                target_height_m = height_cm / 100.0
+                public_url = self._generate_smplx_glb(betas, tmp_path, gender=gender, target_height_m=target_height_m)
             else:
                 raise RuntimeError(f"SMPL-X unavailable for gender='{gender}' and neutral fallback also failed.")
 
@@ -214,6 +231,6 @@ pipeline_instance = AvatarMLPipeline()
 def run_avatar_generation(image_bytes: bytes) -> str:
     return pipeline_instance.process_image(image_bytes)
 
-def run_avatar_generation_from_profile(height: float, weight: float, body_type: str, gender: str = 'neutral') -> str:
+def run_avatar_generation_from_profile(user_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral') -> str:
     """Wrapper for generating avatar purely from profile parameters"""
-    return pipeline_instance.process_profile(height, weight, body_type, gender)
+    return pipeline_instance.process_profile(user_id, height, weight, body_type, gender)

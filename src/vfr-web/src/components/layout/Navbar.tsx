@@ -1,10 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { Ruler, Activity, Camera, Settings, LogOut, Shirt } from 'lucide-react';
+import { Ruler, Activity, Camera, Settings, LogOut, Shirt, CreditCard, Shield } from 'lucide-react';
 
 export default function Navbar() {
-    const { isAuthenticated, logout } = useAuthStore();
+    const { isAuthenticated, logout, role } = useAuthStore();
     const location = useLocation();
+
+    const isAdmin = role?.toLowerCase() === 'admin' || role?.toLowerCase() === 'superadmin';
 
     // Do not show the main navbar on the login/register/setup pages to keep them focused
     if (!isAuthenticated || location.pathname === '/setup') {
@@ -47,10 +49,20 @@ export default function Navbar() {
                     <Activity className="w-4 h-4" />
                     Metrics
                 </Link>
+                <Link to="/billing" className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${location.pathname === '/billing' ? 'bg-white/10 text-white shadow-inner' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                    <CreditCard className="w-4 h-4 text-emerald-500" />
+                    Billing
+                </Link>
+                {isAdmin && (
+                    <Link to="/admin" className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${location.pathname === '/admin' ? 'bg-white/10 text-white shadow-inner' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+                        <Shield className="w-4 h-4 text-primary" />
+                        Admin
+                    </Link>
+                )}
             </div>
 
             <div className="flex items-center gap-3">
-                <Link to="/settings" className="w-10 h-10 flex items-center justify-center rounded-xl bg-[#111111] border border-white/[0.06] text-gray-400 hover:text-white hover:border-primary/30 transition-all">
+                <Link to="/profile" className="w-10 h-10 flex items-center justify-center rounded-xl bg-[#111111] border border-white/[0.06] text-gray-400 hover:text-white hover:border-primary/30 transition-all">
                     <Settings className="w-4 h-4" />
                 </Link>
                 <button

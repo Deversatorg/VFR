@@ -43,14 +43,14 @@ def generate_3d_avatar(self, task_id: str, image_bytes: bytes):
         raise Exception(str(e))
 
 @celery_app.task(bind=True, name="generate_3d_avatar_from_profile")
-def generate_3d_avatar_from_profile(self, task_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral'):
+def generate_3d_avatar_from_profile(self, task_id: str, user_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral'):
     """Parametric SMPL-X avatar generation. Returns S3 public URL."""
-    print(f"[{task_id}] Starting parametric avatar generation (gender={gender})...")
+    print(f"[{task_id}] Starting parametric avatar generation (gender={gender}, user={user_id})...")
     self.update_state(state='PROGRESS', meta={'progress': 10, 'message': f'Running SMPL-X ({gender})...'})
 
     try:
         # pipeline generates the mesh, uploads to S3, and returns the public URL
-        model_url = run_avatar_generation_from_profile(height, weight, body_type, gender)
+        model_url = run_avatar_generation_from_profile(user_id, height, weight, body_type, gender)
 
         self.update_state(state='PROGRESS', meta={'progress': 95, 'message': 'Finalising...'})
         return {

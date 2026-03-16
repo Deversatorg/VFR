@@ -6,9 +6,14 @@ import QuickSetup from './pages/QuickSetup';
 import Home from './pages/Home';
 import Studio from './pages/Studio';
 import Wardrobe from './pages/Wardrobe';
-import Settings from './pages/Settings';
 import Technology from './pages/Technology';
 import Pricing from './pages/Pricing';
+import VerifyEmail from './pages/VerifyEmail';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import Billing from './pages/Billing';
+import AdminDashboard from './pages/AdminDashboard';
+import ProfileDashboard from './pages/ProfileDashboard';
 import AppLayout from './components/layout/AppLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import { useAuthStore } from './store/authStore';
@@ -19,6 +24,26 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
+  return <AppLayout>{children}</AppLayout>;
+};
+
+// Admin Route Guard
+const AdminProtectedRoute = ({ children }: { children: ReactNode }) => {
+  const { isAuthenticated, role } = useAuthStore();
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Check for admin role (assuming 'admin' or 'superadmin' string matches what .NET returns)
+  const isAdmin = role?.toLowerCase() === 'admin' || role?.toLowerCase() === 'superadmin';
+  
+  if (!isAdmin) {
+    // Optionally trigger a toast here if we had a toast library
+    console.warn("Access Denied: Admin privileges required.");
+    return <Navigate to="/" replace />;
+  }
+  
   return <AppLayout>{children}</AppLayout>;
 };
 
@@ -41,6 +66,9 @@ export default function App() {
         <Route path="/pricing" element={<AuthGuard><PublicLayout><Pricing /></PublicLayout></AuthGuard>} />
         <Route path="/login" element={<AuthGuard><Login /></AuthGuard>} />
         <Route path="/register" element={<AuthGuard><Register /></AuthGuard>} />
+        <Route path="/verify-email" element={<AuthGuard><VerifyEmail /></AuthGuard>} />
+        <Route path="/forgot-password" element={<AuthGuard><ForgotPassword /></AuthGuard>} />
+        <Route path="/reset-password" element={<AuthGuard><ResetPassword /></AuthGuard>} />
 
         {/* Setup Flow (Protected, but no Layout needed usually. We use layout to get the Navbar but hide it in logic) */}
         <Route path="/setup" element={<ProtectedRoute><QuickSetup /></ProtectedRoute>} />
@@ -48,7 +76,10 @@ export default function App() {
         {/* Protected Dashboard Routes  */}
         <Route path="/studio" element={<ProtectedRoute><Studio /></ProtectedRoute>} />
         <Route path="/wardrobe" element={<ProtectedRoute><Wardrobe /></ProtectedRoute>} />
-        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+        <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><ProfileDashboard /></ProtectedRoute>} />
+        <Route path="/settings" element={<Navigate to="/profile" replace />} />
+        <Route path="/admin" element={<AdminProtectedRoute><AdminDashboard /></AdminProtectedRoute>} />
 
         {/* Redirects */}
         <Route path="/avatar" element={<Navigate to="/studio" replace />} />

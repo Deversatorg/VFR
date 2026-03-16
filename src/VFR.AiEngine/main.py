@@ -93,6 +93,7 @@ class GarmentGenerationResponse(BaseModel):
     message: str
 
 class ProfileAvatarRequest(BaseModel):
+    user_id: str
     height: float
     weight: float
     body_type: str
@@ -129,7 +130,7 @@ async def generate_avatar_from_profile(request: ProfileAvatarRequest):
     
     from worker import generate_3d_avatar_from_profile
     task = generate_3d_avatar_from_profile.apply_async(
-        args=[task_id, request.height, request.weight, request.body_type, request.gender],
+        args=[task_id, request.user_id, request.height, request.weight, request.body_type, request.gender],
         task_id=task_id
     )
 

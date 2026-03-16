@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authClient } from '../api/apiClients';
 import { Fingerprint, MonitorSmartphone, KeySquare } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export default function Register() {
     const [email, setEmail] = useState('');
@@ -28,7 +29,7 @@ export default function Register() {
         try {
             await authClient.post('/api/v1/users', { email, password, confirmPassword });
             setSuccess(true);
-            setTimeout(() => navigate('/login'), 2500);
+            setTimeout(() => navigate('/verify-email', { state: { email } }), 2500);
         } catch (err: any) {
             if (err.response?.data?.errors) {
                 setFieldErrors(err.response.data.errors);
@@ -78,7 +79,13 @@ export default function Register() {
                 {/* Mobile Decorative Orb */}
                 <div className="absolute top-0 left-1/2 w-full h-[50vh] bg-emerald-500/20 rounded-full blur-[120px] -translate-x-1/2 -translate-y-1/2 lg:hidden pointer-events-none" />
 
-                <div className="w-full max-w-[420px] backdrop-blur-3xl bg-[#0a0a0a]/80 p-10 sm:p-12 rounded-[2.5rem] border border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+                <motion.div 
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="w-full max-w-[420px] backdrop-blur-3xl bg-[#0a0a0a]/80 p-10 sm:p-12 rounded-[2.5rem] border border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+                >
                     <div className="mb-10 text-center">
                         <div className="w-16 h-16 bg-gradient-to-b from-gray-800 to-gray-900 border border-white/10 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-inner relative overflow-hidden group">
                             <div className="absolute inset-0 bg-emerald-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -98,7 +105,7 @@ export default function Register() {
                     {success && (
                         <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
                             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0 mt-1.5 box-shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                            <p className="leading-relaxed">Registration successful! Redirecting to login...</p>
+                            <p className="leading-relaxed">Registration successful! Redirecting to email verification...</p>
                         </div>
                     )}
 
@@ -178,7 +185,7 @@ export default function Register() {
                         <a href="#" className="text-gray-400 hover:text-white transition-colors underline decoration-white/20 underline-offset-2">Biometric Data Policy</a> and{' '}
                         <a href="#" className="text-gray-400 hover:text-white transition-colors underline decoration-white/20 underline-offset-2">Terms of Service</a>.
                     </p>
-                </div>
+                </motion.div>
             </div>
         </div>
     );

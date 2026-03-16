@@ -1,14 +1,22 @@
 import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
-import { Layers, Maximize, Cpu, Rotate3D, Upload, Shirt, Sparkles, AlertCircle } from 'lucide-react';
+import { Maximize, Cpu, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
 import AvatarViewer from '../components/3d/AvatarViewer';
+import CameraController from '../components/3d/CameraController';
 import { profileClient, avatarClient } from '../api/apiClients';
 import { useNavigate } from 'react-router-dom';
 
 const AVATAR_API_URL = import.meta.env.VITE_AI_ENGINE_API_URL || 'http://localhost:8000';
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 60; // 2 min timeout
+
+const MOCK_CLOTHES = [
+    { id: 't1', type: 'top', name: 'Classic White T-Shirt', color: '#ffffff' },
+    { id: 't2', type: 'top', name: 'Black Hoodie', color: '#1a1a1a' },
+    { id: 'b1', type: 'bottom', name: 'Blue Jeans', color: '#1e3a8a' },
+    { id: 'b2', type: 'bottom', name: 'Cargo Pants', color: '#4b5563' },
+];
 
 type GenStatus = 'idle' | 'pending' | 'success' | 'error';
 
@@ -19,16 +27,36 @@ export default function Studio() {
     // Parametric controls state
     const [height, setHeight] = useState(170);
     const [weight, setWeight] = useState(70);
+    
+    // Local state for performant slider updates before triggering a fetch/render
+    const [localHeight, setLocalHeight] = useState(170);
+    const [localWeight, setLocalWeight] = useState(70);
     const [bodyType, setBodyType] = useState('regular');
     const [gender, setGender] = useState<'male' | 'female'>('male');
     const [animation, setAnimation] = useState<'idle' | 'walk' | 'run' | 'jump' | 'tpose'>('idle');
-    const [showShirt, setShowShirt] = useState(false);
+    const [userId, setUserId] = useState<string>('default_user');
+
+    // UI State for Tabs & Wardrobe
+    const [activeTab, setActiveTab] = useState<'body' | 'wardrobe'>('body');
+    const [selectedClothes, setSelectedClothes] = useState<{ top: string | null, bottom: string | null }>({ top: null, bottom: null });
+
+    const handleClothingSelect = (item: any) => {
+        setSelectedClothes(prev => {
+            const isCurrentlySelected = prev[item.type as keyof typeof prev] === item.id;
+            return {
+                ...prev,
+                [item.type]: isCurrentlySelected ? null : item.id
+            };
+        });
+    };
 
     // Avatar generation state
     const [avatarUrl, setAvatarUrl]       = useState<string | null>(null);
     const [genStatus, setGenStatus]       = useState<GenStatus>('idle');
     const [genProgress, setGenProgress]   = useState(0);
     const [genError, setGenError]         = useState<string | null>(null);
+    const [cameraResetTick, setCameraResetTick] = useState(0);
+    const [cameraView, setCameraView] = useState<'front' | 'back' | 'left' | 'right' | 'face'>('front');
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pollCountRef = useRef(0);
 
@@ -37,14 +65,21 @@ export default function Studio() {
         pollCountRef.current = 0;
     }, []);
 
+    const handleResetCamera = useCallback(() => {
+        setCameraResetTick(prev => prev + 1);
+    }, []);
+
     // Fetch initial parametric profile from the backend
     useEffect(() => {
         const loadProfile = async () => {
             try {
                 const profileRes = await profileClient.get('/api/v1/profiles/me');
                 if (profileRes.data) {
+                    setUserId(profileRes.data.userId || profileRes.data.id || 'default_user');
                     setHeight(profileRes.data.height || 170);
+                    setLocalHeight(profileRes.data.height || 170);
                     setWeight(profileRes.data.weight || 70);
+                    setLocalWeight(profileRes.data.weight || 70);
                     setBodyType((profileRes.data.bodyType || 'regular').toLowerCase());
                 }
             } catch (error: any) {
@@ -58,8 +93,29 @@ export default function Studio() {
     // Reset generated avatar when gender changes
     useEffect(() => { setAvatarUrl(null); }, [gender]);
 
+    // Auto-frame camera when a new model loads
+    useEffect(() => { handleResetCamera(); }, [avatarUrl, gender, handleResetCamera]);
+
     // Cleanup polling on unmount
     useEffect(() => () => stopPolling(), [stopPolling]);
+
+    // --- Debounce Logic for Sliders ---
+    useEffect(() => {
+        if (localHeight === height) return;
+        const handler = setTimeout(() => {
+            setHeight(localHeight);
+        }, 750);
+        return () => clearTimeout(handler);
+    }, [localHeight, height]);
+
+    useEffect(() => {
+        if (localWeight === weight) return;
+        const handler = setTimeout(() => {
+            setWeight(localWeight);
+        }, 750);
+        return () => clearTimeout(handler);
+    }, [localWeight, weight]);
+    // ----------------------------------
 
     const handleGenerateAvatar = async () => {
         setGenStatus('pending');
@@ -70,7 +126,7 @@ export default function Studio() {
         let taskId: string;
         try {
             const res = await avatarClient.post('/api/v1/avatar/generate-from-profile', {
-                height, weight, body_type: bodyType, gender,
+                user_id: userId, height, weight, body_type: bodyType, gender,
             });
             taskId = res.data.task_id;
         } catch (err: any) {
@@ -114,192 +170,11 @@ export default function Studio() {
         }, POLL_INTERVAL_MS);
     };
 
-    const handleUploadClick = () => {
-        // Photo upload — separate future feature; keep as-is
-    };
-
     return (
-        <div className={`relative flex pt-[20px] pb-6 px-6 sm:px-8 gap-6 animate-in fade-in duration-700 ${isFullscreen ? 'fixed inset-0 z-50 bg-[#050505] p-0' : 'w-full h-full'}`}>
-
-            {/* Left Sidebar - Studio Controls (Hidden in Fullscreen) */}
-            {!isFullscreen && (
-                <div className="w-[300px] flex flex-col gap-4">
-                    <div className="p-6 rounded-[2rem] bg-[#0a0a0a]/80 border border-white/[0.06] backdrop-blur-xl shadow-2xl flex-shrink-0 animate-in slide-in-from-left-4">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center shadow-inner">
-                                <Layers className="w-5 h-5 text-primary" />
-                            </div>
-                            <div>
-                                <h2 className="text-white font-semibold tracking-tight">Avatar Controls</h2>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className="relative flex h-1.5 w-1.5">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                                    </span>
-                                    <p className="text-[10px] text-gray-400 uppercase tracking-widest font-medium">Neural Mesh v2.0</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6">
-                            {/* Gender Selector */}
-                            <div className="space-y-2">
-                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Gender Base</span>
-                                <div className="flex gap-2 mt-2">
-                                    {(['male', 'female'] as const).map(type => (
-                                        <button
-                                            key={type}
-                                            onClick={() => setGender(type)}
-                                            className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-all ${gender === type
-                                                ? 'bg-primary/20 text-primary border border-primary/50'
-                                                : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
-                                                }`}
-                                        >
-                                            {type.toUpperCase()}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            {/* Height Slider */}
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-end">
-                                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Height</span>
-                                    <span className="text-[11px] text-white font-mono">{height} cm</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="140"
-                                    max="220"
-                                    value={height}
-                                    onChange={(e) => setHeight(Number(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-primary"
-                                />
-                            </div>
-
-                            {/* Weight Slider */}
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-end">
-                                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Weight</span>
-                                    <span className="text-[11px] text-white font-mono">{weight} kg</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="40"
-                                    max="150"
-                                    value={weight}
-                                    onChange={(e) => setWeight(Number(e.target.value))}
-                                    className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-blue-500"
-                                />
-                            </div>
-
-                            {/* Body Type Selector */}
-                            <div className="space-y-2">
-                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Body Type</span>
-                                <div className="flex gap-2 mt-2">
-                                    {['slim', 'regular', 'athletic', 'curvy'].map(type => (
-                                        <button
-                                            key={type}
-                                            onClick={() => setBodyType(type)}
-                                            className={`flex-1 py-1.5 rounded-lg text-[10px] font-medium transition-all ${bodyType === type
-                                                ? 'bg-primary/20 text-primary border border-primary/50'
-                                                : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
-                                                }`}
-                                        >
-                                            {type.toUpperCase()}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Animation Selector */}
-                            <div className="space-y-2 mt-6">
-                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Animation State</span>
-                                <div className="grid grid-cols-3 gap-2 mt-2">
-                                    {['idle', 'walk', 'run', 'jump', 'tpose'].map(anim => (
-                                        <button
-                                            key={anim}
-                                            onClick={() => setAnimation(anim as any)}
-                                            className={`py-1.5 rounded-lg text-[10px] items-center justify-center flex font-medium transition-all ${animation === anim
-                                                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50'
-                                                : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
-                                                }`}
-                                        >
-                                            {anim.toUpperCase()}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Wardrobe Toggles */}
-                            <div className="space-y-2 mt-4">
-                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Wardrobe</span>
-                                <div className="grid grid-cols-2 gap-2 mt-2">
-                                    <button
-                                        onClick={() => setShowShirt(s => !s)}
-                                        className={`py-2 rounded-lg text-[10px] flex items-center justify-center gap-1.5 font-medium transition-all ${showShirt
-                                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
-                                            : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
-                                            }`}
-                                    >
-                                        <Shirt className="w-3 h-3" />
-                                        T-SHIRT
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Generate Avatar Button */}
-                        <button
-                            onClick={handleGenerateAvatar}
-                            disabled={genStatus === 'pending'}
-                            className="w-full mt-6 py-3 bg-gradient-to-r from-primary to-blue-600 hover:from-primary/80 hover:to-blue-600/80 disabled:opacity-50 border border-transparent rounded-xl text-white font-medium shadow-lg transition-all flex items-center justify-center gap-2"
-                        >
-                            {genStatus === 'pending' ? (
-                                <>
-                                    <Cpu className="w-5 h-5 animate-spin" />
-                                    <span>Generating... {genProgress}%</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Sparkles className="w-5 h-5" />
-                                    <span>{genStatus === 'success' ? 'Regenerate Avatar' : 'Generate Avatar'}</span>
-                                </>
-                            )}
-                        </button>
-
-                        {/* Error message */}
-                        {genStatus === 'error' && genError && (
-                            <div className="mt-3 flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
-                                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                                <p className="text-[11px] text-red-400 leading-relaxed">{genError}</p>
-                            </div>
-                        )}
-
-                        {/* Upload Photo (secondary) */}
-                        <button
-                            onClick={handleUploadClick}
-                            className="w-full mt-2 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-gray-400 text-[11px] font-medium transition-all flex items-center justify-center gap-2"
-                        >
-                            <Upload className="w-4 h-4" />
-                            <span>Upload Photo (coming soon)</span>
-                        </button>
-
-
-                    </div>
-
-                    <div className="flex-1 p-6 rounded-[2rem] bg-[#0a0a0a]/80 border border-white/[0.06] backdrop-blur-xl shadow-2xl flex flex-col items-center justify-center text-center animate-in slide-in-from-left-4 delay-75">
-                        <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4">
-                            <Rotate3D className="w-5 h-5 text-gray-500" />
-                        </div>
-                        <h3 className="text-sm font-medium text-white mb-1">Wardrobe Engine</h3>
-                        <p className="text-gray-500 text-xs leading-relaxed max-w-[200px]">Garment physics simulation will initialize once apparel is imported.</p>
-                    </div>
-                </div>
-            )
-            }
+        <div className={`flex flex-col md:flex-row h-screen w-full overflow-hidden bg-[#050505] animate-in fade-in duration-700 ${isFullscreen ? 'fixed inset-0 z-50 p-0' : 'pt-20'}`}>
 
             {/* Main 3D Viewport Backdrop + Canvas */}
-            <div className={`flex-1 relative bg-[#0a0a0a] border border-white/[0.06] shadow-2xl overflow-hidden flex items-center justify-center group transition-all duration-500 ${isFullscreen ? 'rounded-none border-0' : 'rounded-[2.5rem]'}`}>
+            <div className={`w-full relative bg-[#0a0a0a] transition-all duration-500 overflow-hidden ${isFullscreen ? 'h-full md:w-full border-0 z-50' : 'h-[60vh] md:h-full md:w-2/3 border-b md:border-b-0 md:border-r border-white/[0.06] shadow-2xl'}`}>
                 {/* Viewport Background Gradients */}
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-800/50 via-[#0a0a0a] to-[#050505] opacity-50" />
 
@@ -330,11 +205,14 @@ export default function Studio() {
                                 bodyType={bodyType}
                                 gender={gender}
                                 animation={animation}
-                                showShirt={showShirt}
+                                showShirt={selectedClothes.top !== null}
                             />
 
+                            <CameraController avatarHeight={localHeight / 100} trigger={cameraResetTick} view={cameraView} />
+                            
                             <ContactShadows position={[0, -1, 0]} opacity={0.4} scale={10} blur={2} far={4} />
                             <OrbitControls
+                                makeDefault
                                 enablePan={false}
                                 enableZoom={true}
                                 minDistance={2}
@@ -353,14 +231,14 @@ export default function Studio() {
                     <div className="absolute bottom-0 left-0 right-0 z-30 h-[3px] bg-white/5">
                         <div
                             className="h-full bg-gradient-to-r from-primary to-blue-500 transition-all duration-700"
-                            style={{ width: `${genProgress}%` }}
+                            style={{ width: `${Math.max(5, genProgress)}%` }}
                         />
                     </div>
                 )}
 
                 {/* Success badge */}
                 {genStatus === 'success' && (
-                    <div className="absolute top-6 right-16 z-20">
+                    <div className="absolute top-6 right-6 z-20">
                         <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 backdrop-blur-md border border-emerald-500/30">
                             <Sparkles className="w-3 h-3 text-emerald-400" />
                             <span className="text-[10px] font-mono text-emerald-400 tracking-widest uppercase">AI Generated</span>
@@ -368,21 +246,214 @@ export default function Studio() {
                     </div>
                 )}
 
-                {/* Viewport UI Overlays */}
-                <div className="absolute top-6 left-6 z-20 pointer-events-none">
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 backdrop-blur-md border border-white/10">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[10px] font-mono text-emerald-400 tracking-widest uppercase">Live Viewport</span>
-                    </div>
+                {/* Floating Camera Presets Toolbar */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center p-1 border border-white/10 bg-black/50 backdrop-blur-xl rounded-2xl shadow-2xl">
+                    {(['front', 'back', 'left', 'right', 'face'] as const).map(v => (
+                        <button
+                            key={v}
+                            onClick={() => setCameraView(v)}
+                            className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[9px] md:text-[10px] font-bold uppercase tracking-widest transition-all ${
+                                cameraView === v 
+                                    ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                                    : 'text-gray-400 hover:text-white hover:bg-white/10'
+                            }`}
+                        >
+                            {v}
+                        </button>
+                    ))}
                 </div>
 
                 <button
                     onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="absolute bottom-6 right-6 z-20 w-12 h-12 bg-black/40 hover:bg-black/60 backdrop-blur-md rounded-2xl border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all duration-300 hover:scale-105 active:scale-95 shadow-lg"
+                    className="absolute top-6 left-6 z-20 w-10 h-10 bg-black/40 hover:bg-black/60 backdrop-blur-md rounded-xl border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all shadow-lg"
                 >
-                    <Maximize className="w-5 h-5" />
+                    <Maximize className="w-4 h-4" />
                 </button>
             </div>
-        </div >
+
+            {/* Control Panel Area (Bottom Sheet on Mobile) */}
+            {!isFullscreen && (
+                <div className="w-full md:w-1/3 h-[40vh] md:h-full bg-[#0a0a0a] shadow-[0_-20px_40px_rgba(0,0,0,0.5)] md:shadow-none z-20 overflow-y-auto p-4 md:p-6 md:rounded-none flex flex-col gap-6 scrollbar-hide pb-24 md:pb-6 relative rounded-t-2xl">
+                    
+                    {/* Tabs */}
+                    <div className="flex bg-[#111111] p-1 rounded-xl border border-white/5 shrink-0 sticky top-0 z-10">
+                        <button
+                            onClick={() => setActiveTab('body')}
+                            className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'body' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                            My Body
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('wardrobe')}
+                            className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === 'wardrobe' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                        >
+                            Wardrobe
+                        </button>
+                    </div>
+
+                    {/* Body Tab Content */}
+                    {activeTab === 'body' && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                            {/* Gender Selector */}
+                            <div className="space-y-2">
+                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Gender Base</span>
+                                <div className="flex gap-2">
+                                    {(['male', 'female'] as const).map(type => (
+                                        <button
+                                            key={type}
+                                            onClick={() => setGender(type)}
+                                            className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all ${gender === type
+                                                ? 'bg-primary/20 text-primary border border-primary/50'
+                                                : 'bg-[#111111] text-gray-400 border border-white/5 hover:bg-white/5'
+                                                }`}
+                                        >
+                                            {type.toUpperCase()}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Height Slider */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-end">
+                                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Height</span>
+                                    <span className="text-sm text-white font-mono">{localHeight} cm</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="140"
+                                    max="220"
+                                    value={localHeight}
+                                    onChange={(e) => setLocalHeight(Number(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-primary"
+                                />
+                            </div>
+
+                            {/* Weight Slider */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-end">
+                                    <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Weight</span>
+                                    <span className="text-sm text-white font-mono">{localWeight} kg</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="40"
+                                    max="150"
+                                    value={localWeight}
+                                    onChange={(e) => setLocalWeight(Number(e.target.value))}
+                                    className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+
+                            {/* Body Type Selector */}
+                            <div className="space-y-2">
+                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Body Type</span>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['slim', 'regular', 'athletic', 'curvy'].map(type => (
+                                        <button
+                                            key={type}
+                                            onClick={() => setBodyType(type)}
+                                            className={`py-2 rounded-xl text-xs font-medium transition-all ${bodyType === type
+                                                ? 'bg-primary/20 text-primary border border-primary/50'
+                                                : 'bg-[#111111] text-gray-400 border border-white/5 hover:bg-white/5'
+                                                }`}
+                                        >
+                                            {type.toUpperCase()}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            {/* Animation Selector */}
+                            <div className="space-y-2">
+                                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">Animation State</span>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {['idle', 'walk', 'run', 'jump', 'tpose'].map(anim => (
+                                        <button
+                                            key={anim}
+                                            onClick={() => setAnimation(anim as any)}
+                                            className={`py-2 rounded-xl text-[10px] items-center justify-center flex font-medium transition-all ${animation === anim
+                                                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50'
+                                                : 'bg-[#111111] text-gray-400 border border-white/5 hover:bg-white/5'
+                                                }`}
+                                        >
+                                            {anim.toUpperCase()}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Generate Avatar Button */}
+                            <button
+                                onClick={handleGenerateAvatar}
+                                disabled={genStatus === 'pending'}
+                                className="w-full mt-2 py-3.5 bg-gradient-to-r from-primary to-blue-600 hover:from-primary/80 hover:to-blue-600/80 disabled:opacity-50 rounded-xl text-white font-semibold shadow-lg transition-all flex items-center justify-center gap-2"
+                            >
+                                {genStatus === 'pending' ? (
+                                    <>
+                                        <Cpu className="w-5 h-5 animate-spin" />
+                                        <span>Generating... {Math.max(5, genProgress)}%</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles className="w-5 h-5" />
+                                        <span>{genStatus === 'success' ? 'Regenerate Avatar' : 'Generate Avatar'}</span>
+                                    </>
+                                )}
+                            </button>
+
+                            {/* Error message */}
+                            {genStatus === 'error' && genError && (
+                                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                                    <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                                    <p className="text-xs text-red-400 leading-relaxed">{genError}</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Wardrobe Tab Content */}
+                    {activeTab === 'wardrobe' && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-semibold text-white">Apparel Library</span>
+                                <span className="text-xs text-gray-500">{MOCK_CLOTHES.length} Items</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3 pb-8">
+                                {MOCK_CLOTHES.map(item => {
+                                    const isSelected = selectedClothes.top === item.id || selectedClothes.bottom === item.id;
+                                    return (
+                                        <div
+                                            key={item.id}
+                                            onClick={() => handleClothingSelect(item)}
+                                            className={`relative cursor-pointer rounded-2xl overflow-hidden transition-all duration-200 border-2 ${
+                                                isSelected ? 'border-primary shadow-[0_0_15px_rgba(19,91,236,0.3)] hover:border-primary' : 'border-[#1a1a1a] hover:border-white/20'
+                                            }`}
+                                        >
+                                            <div className="aspect-[4/5] bg-[#111111] flex flex-col p-3">
+                                                <div 
+                                                    className="flex-1 rounded-xl mb-3 shadow-inner opacity-80" 
+                                                    style={{ backgroundColor: item.color }}
+                                                />
+                                                <div className="flex justify-between items-end">
+                                                    <div>
+                                                        <p className="text-xs font-medium text-white line-clamp-1">{item.name}</p>
+                                                        <p className="text-[10px] text-gray-500 capitalize mt-0.5">{item.type}</p>
+                                                    </div>
+                                                    {isSelected && (
+                                                        <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }
