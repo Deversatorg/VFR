@@ -74,10 +74,21 @@ os.makedirs(_GARMENTS_DIR, exist_ok=True)
 app.mount("/models/garments", StaticFiles(directory=_GARMENTS_DIR), name="garments")
 app.mount("/models",          StaticFiles(directory=_AVATARS_DIR),  name="models")
 
+default_dev_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+extra_allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("AI_ENGINE_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict to actual frontend domains
-    allow_credentials=True,
+    allow_origins=default_dev_origins + extra_allowed_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -97,7 +108,16 @@ class ProfileAvatarRequest(BaseModel):
     height: float
     weight: float
     body_type: str
-    gender: str = 'neutral'  # 'male', 'female', or 'neutral'
+    gender: str = 'neutral'
+    chest: float = 0
+    waist: float = 0
+    hip: float = 0
+    shoulder: float = 0
+    calf: float = 0
+    arm_length: float = 0
+    torso_length: float = 0
+    leg_length: float = 0
+    face_image_url: str = ""
 
 @app.get("/")
 def read_root():
@@ -130,7 +150,11 @@ async def generate_avatar_from_profile(request: ProfileAvatarRequest):
     
     from worker import generate_3d_avatar_from_profile
     task = generate_3d_avatar_from_profile.apply_async(
-        args=[task_id, request.user_id, request.height, request.weight, request.body_type, request.gender],
+        args=[
+            task_id, request.user_id, request.height, request.weight, request.body_type, request.gender,
+            request.chest, request.waist, request.hip, request.shoulder, request.calf,
+            request.arm_length, request.torso_length, request.leg_length, request.face_image_url
+        ],
         task_id=task_id
     )
 

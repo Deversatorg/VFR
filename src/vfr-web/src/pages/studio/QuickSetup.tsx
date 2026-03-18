@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { profileClient } from '../api/apiClients';
+import { profileClient } from '../../api/apiClients';
 import { Info, Activity, ScanLine } from 'lucide-react';
 
 export default function QuickSetup() {

@@ -2,8 +2,6 @@ import io
 # Force OpenMP to use 1 thread to avoid deadlocks in forked Celery processes
 import os
 os.environ['OMP_NUM_THREADS'] = '1'
-import time
-import uuid
 import logging
 from typing import TYPE_CHECKING, Tuple, Any, Optional
 from dotenv import load_dotenv
@@ -19,12 +17,13 @@ try:
     import smplx
     import trimesh
     import numpy as np
-    from pygltflib import GLTF2
     HAS_ML_DEPS = True
 except ImportError:
     HAS_ML_DEPS = False
 
 from s3_client import upload_glb  # S3 upload helper
+from anthropometry import infer_measurement_targets
+from measurement_optimizer import calculate_measurements, optimize_smplx_betas
 
 logger = logging.getLogger("AvatarML")
 
@@ -82,42 +81,105 @@ class AvatarMLPipeline:
                     self._smpl_models[gender] = None
         return self._smpl_models[gender]
 
-    def _simulate_profile_betas(self, height_cm: float, weight_kg: float, body_type: str) -> Any:
+    def _simulate_profile_betas(
+        self, height_cm: float, weight_kg: float, body_type: str,
+        chest: float = 0, waist: float = 0, hip: float = 0, shoulder: float = 0,
+        calf: float = 0, arm_length: float = 0, torso_length: float = 0, leg_length: float = 0
+    ) -> Any:
         """
-        BMI-based mapping of physical metrics to SMPL-X shape betas.
+        Conservative heuristic mapping of coarse metrics to SMPL-X shape betas.
+
+        SMPL-X betas are PCA coefficients, not semantic sliders such as
+        "shoulders", "waist", or "hips". Aggressive writes into higher beta
+        axes create non-human artifacts surprisingly often, so this fallback
+        keeps most of the signal in the first couple of dimensions and treats
+        body type as a light bias rather than a hard morph target.
         """
-        # Calculate standard BMI
-        height_m = height_cm / 100.0
+        height_m = max(height_cm / 100.0, 1e-6)
         bmi = weight_kg / (height_m ** 2)
 
-        betas = torch.zeros((1, 10), dtype=torch.float32)
+        betas = torch.zeros((1, 10), dtype=torch.float32, device=self.device)
 
-        # betas[0] controls overall weight/thickness. Normal BMI is ~22.
-        # Scale proportional to (BMI - 22)
-        betas[0, 0] = (bmi - 22.0) * 0.4
+        # beta[0]: overall bulk. Keep this as the dominant heuristic signal.
+        bmi_offset = (bmi - 21.0) / 3.5
+        betas[0, 0] = float(np.clip(bmi_offset, -1.75, 1.75))
 
-        # betas[1] controls weight distribution (waist-to-hip / chest).
+        # beta[1]: very mild proportional bias only. Height itself is enforced
+        # later during export, so we should not double-count it here.
+        height_offset = (height_cm - 170.0) / 20.0
+        betas[0, 1] = float(np.clip(height_offset, -1.0, 1.0)) * 0.15
+
+        # Body type should bias leanness/bulk, not poke unpredictable PCA axes.
         b_type = body_type.lower()
         if b_type == 'slim':
-            betas[0, 1] = 1.5
-            betas[0, 2] = 0.0
-        elif b_type == 'curvy' or b_type == 'stout':
-            betas[0, 1] = -1.5
-            betas[0, 2] = 1.0
+            betas[0, 0] -= 0.25
         elif b_type == 'athletic':
-            betas[0, 1] = 0.5
-            betas[0, 2] = -1.0
-        else: # average
-            betas[0, 1] = 0.0
-            betas[0, 2] = 0.0
+            betas[0, 0] -= 0.35
+            betas[0, 1] += 0.05
+        elif b_type == 'curvy' or b_type == 'plus':
+            betas[0, 0] += 0.5
+
+        # If coarse torso measurements are present, fold them into the same
+        # "overall bulk" axis instead of pretending beta[2..4] are semantic.
+        bulk_signals = []
+        if chest > 0:
+            expected_chest = height_cm * 0.52
+            bulk_signals.append((chest - expected_chest) / max(expected_chest, 1.0))
+        if waist > 0:
+            expected_waist = height_cm * 0.45
+            bulk_signals.append((waist - expected_waist) / max(expected_waist, 1.0))
+        if hip > 0:
+            expected_hip = height_cm * 0.53
+            bulk_signals.append((hip - expected_hip) / max(expected_hip, 1.0))
+
+        if bulk_signals:
+            bulk_bias = float(np.clip(sum(bulk_signals) / len(bulk_signals), -0.4, 0.6))
+            betas[0, 0] += bulk_bias * 1.2
+
+        # Very mild proportion hints only when explicitly provided.
+        proportion_bias = 0.0
+        if arm_length > 0:
+            proportion_bias += np.clip((arm_length / max(height_cm, 1.0)) - 0.37, -0.05, 0.05)
+        if leg_length > 0:
+            proportion_bias += np.clip((leg_length / max(height_cm, 1.0)) - 0.48, -0.06, 0.06)
+        if proportion_bias != 0.0:
+            betas[0, 1] += float(np.clip(proportion_bias, -0.08, 0.08))
+
+        betas.clamp_(-2.5, 2.5)
 
         logger.info(
-            f"Profile betas — h={height_cm}cm, w={weight_kg}kg, BMI={bmi:.1f}, "
-            f"type={body_type}: {betas[0, :3].tolist()}"
+            f"Profile betas — h={height_cm}cm, w={weight_kg}kg, BMI={bmi:.1f}: "
+            f"{betas[0].tolist()}"
         )
-        return torch.tensor(betas, dtype=torch.float32).to(self.device)
+        return betas
 
-    def _generate_smplx_glb(self, betas: Any, output_path: str, gender: str = 'neutral', target_height_m: float = 1.70) -> str:
+    def _extract_skin_color(self, image_url: str) -> Optional[Tuple[float, float, float]]:
+        """Extracts the dominant skin color from an image URL."""
+        if not image_url:
+            return None
+        try:
+            import requests
+            from PIL import Image
+            import numpy as np
+
+            logger.info(f"Extracting skin color from {image_url}...")
+            response = requests.get(image_url, timeout=5)
+            img = Image.open(io.BytesIO(response.content)).convert("RGB")
+            img.thumbnail((100, 100)) # resize for speed
+            
+            # Simple heuristic: average color of the center region
+            data = np.array(img)
+            h, w, _ = data.shape
+            center = data[h//4:3*h//4, w//4:3*w//4]
+            avg_color = center.mean(axis=(0, 1)) / 255.0
+            
+            logger.info(f"Extracted color: {avg_color}")
+            return tuple(avg_color.tolist())
+        except Exception as e:
+            logger.warning(f"Failed to extract skin color: {e}")
+            return None
+
+    def _generate_smplx_glb(self, betas: Any, output_path: str, gender: str = 'neutral', target_height_m: float = 1.70, skin_color: Optional[Tuple[float, float, float]] = None) -> str:
         """
         Runs the SMPL-X forward pass, exports the mesh as GLB, uploads to S3.
         Returns the public S3 URL (or local path when S3 is unavailable).
@@ -138,7 +200,7 @@ class AvatarMLPipeline:
             output = smpl_model(betas=betas, return_verts=True)
 
         verts = output.vertices[0].detach().cpu().numpy()   # (N, 3)
-        faces = smpl_model.faces                             # (F, 3)
+        faces = smpl_model.faces                            # (F, 3)
 
         # Scale mesh to precise target height
         current_height = verts[:, 1].max() - verts[:, 1].min()
@@ -154,14 +216,42 @@ class AvatarMLPipeline:
         matrix = tf.rotation_matrix(np.pi, [0, 1, 0])
         mesh.apply_transform(matrix)
         
-        # Center the mesh so its lowest point (feet) is at Y=0
+        # Center the mesh
         min_y = mesh.vertices[:, 1].min()
         mesh.apply_translation([0, -min_y, 0])
 
-        os.makedirs(os.path.dirname(output_path) or '/tmp', exist_ok=True)
-        mesh.export(output_path, file_type='glb')
-        logger.info(f"SMPL-X mesh exported to {output_path} "
-                    f"({len(verts)} verts, {len(faces)} faces)")
+        # Get rigging data
+        joints = output.joints[0].detach().cpu().numpy() * scale
+        # Apply same transformations to joints
+        joints = (np.hstack([joints, np.ones((joints.shape[0], 1))]) @ matrix.T)[:, :3]
+        joints[:, 1] -= min_y
+
+        parents = smpl_model.parents.detach().cpu().numpy()
+        weights = smpl_model.lbs_weights.detach().cpu().numpy() # (V, J)
+
+        # Truncate joints to only include the actual skeletal bones
+        num_bones = len(parents)
+        joints = joints[:num_bones]
+
+        # Handle vertex colors (skin tone)
+        vertex_colors = None
+        if skin_color:
+            # Create RGBA vertex colors
+            rgba = list(skin_color) + [1.0]
+            vertex_colors = np.tile(rgba, (len(verts), 1))
+
+        # Export rigged GLB using pygltflib
+        self._write_rigged_glb(
+            output_path, 
+            mesh.vertices.astype(np.float32), 
+            mesh.faces.astype(np.uint32), 
+            joints.astype(np.float32), 
+            parents.astype(np.int32), 
+            weights.astype(np.float32),
+            colors=vertex_colors
+        )
+        
+        logger.info(f"SMPL-X rigged GLB exported to {output_path}")
 
         # Upload to S3 and return public URL
         s3_key = f"avatars/{os.path.basename(output_path)}"
@@ -169,12 +259,179 @@ class AvatarMLPipeline:
         
         return public_url
 
+    # SMPL-X standard joint names (first 54)
+    SMPLX_JOINT_NAMES = [
+        "pelvis", "left_hip", "right_hip", "spine_1", "left_knee", "right_knee", "spine_2", "left_ankle", "right_ankle",
+        "spine_3", "left_foot", "right_foot", "neck", "left_collar", "right_collar", "head", "left_shoulder",
+        "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "jaw", "left_eye_smplhf",
+        "right_eye_smplhf", "left_index_1", "left_index_2", "left_index_3", "left_middle_1", "left_middle_2",
+        "left_middle_3", "left_pinky_1", "left_pinky_2", "left_pinky_3", "left_ring_1", "left_ring_2", "left_ring_3",
+        "left_thumb_1", "left_thumb_2", "left_thumb_3", "right_index_1", "right_index_2", "right_index_3",
+        "right_middle_1", "right_middle_2", "right_middle_3", "right_pinky_1", "right_pinky_2", "right_pinky_3",
+        "right_ring_1", "right_ring_2", "right_ring_3", "right_thumb_1", "right_thumb_2", "right_thumb_3"
+    ]
 
+    def _write_rigged_glb(self, path, vertices, faces, joints, parents, weights, colors=None):
+        """
+        Constructs a GLB with a static body mesh plus a skeleton node hierarchy.
 
-    def process_profile(self, user_id: str, height_cm: float, weight_kg: float, body_type: str, gender: str = 'neutral') -> str:
+        The current frontend only needs a clean body mesh and named skeleton
+        anchors (for example spine/chest) for wardrobe attachment. A previous
+        custom skin export produced visibly collapsed avatars in Three.js, so
+        the body mesh is intentionally exported without binding it to the skin
+        until proper bind-matrix validation is in place.
+        """
+        from pygltflib import GLTF2, Buffer, BufferView, Accessor, Mesh, Primitive, Attributes, Node, Skin, Scene
+        import numpy as np
+        import os
+
+        gltf = GLTF2()
+        
+        num_verts = vertices.shape[0]
+        num_joints = joints.shape[0]
+        
+        # 1. Защита от лишних весов: обрезаем матрицу весов под количество реальных костей
+        if weights.shape[1] > num_joints:
+            weights = weights[:, :num_joints]
+            
+        v_indices = np.zeros((num_verts, 4), dtype=np.uint16)
+        v_weights = np.zeros((num_verts, 4), dtype=np.float32)
+        
+        # 2. Безопасная обработка весов с геометрической привязкой "осиротевших" вершин
+        for i in range(num_verts):
+            w = weights[i]
+            
+            # Если вершина потеряла свои кости (например, отрезали кости лица)
+            if w.sum() < 1e-5:
+                # Находим физически ближайшую кость в 3D пространстве
+                dist = np.linalg.norm(joints - vertices[i], axis=1)
+                closest_j = np.argmin(dist)
+                w = np.zeros(num_joints, dtype=np.float32)
+                w[closest_j] = 1.0
+                
+            # Берем топ-4 веса
+            top_4_idx = np.argsort(w)[-4:][::-1]
+            top_4_w = w[top_4_idx]
+            
+            # Ре-нормализация (чтобы сумма всегда была ровно 1.0)
+            sum_w = top_4_w.sum()
+            if sum_w > 1e-5:
+                top_4_w /= sum_w
+            else:
+                top_4_w = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+                top_4_idx = np.array([0, 0, 0, 0], dtype=np.uint16)
+                
+            v_indices[i] = top_4_idx.astype(np.uint16)
+            v_weights[i] = top_4_w
+
+        # 3. Упаковка байтов
+        pos_bin = vertices.tobytes()
+        ind_bin = faces.tobytes()
+        j_ind_bin = v_indices.tobytes()
+        j_w_bin = v_weights.tobytes()
+        
+        full_bin = pos_bin + ind_bin + j_ind_bin + j_w_bin
+        if colors is not None:
+            col_bin = colors.astype(np.float32).tobytes()
+            full_bin += col_bin
+        else:
+            col_bin = b""
+
+        offset = 0
+        accessors_info = [
+            (pos_bin, 5126, "VEC3", 34962),
+            (ind_bin, 5125, "SCALAR", 34963),
+            (j_ind_bin, 5123, "VEC4", 34962),
+            (j_w_bin, 5126, "VEC4", 34962)
+        ]
+        if colors is not None:
+            accessors_info.append((col_bin, 5126, "VEC4", 34962))
+
+        for i, (data, comp_type, data_type, target) in enumerate(accessors_info):
+            view = BufferView(buffer=0, byteOffset=offset, byteLength=len(data), target=target)
+            gltf.bufferViews.append(view)
+            acc = Accessor(bufferView=i, componentType=comp_type, count=0, type=data_type)
+            if data_type == "VEC3": acc.count = num_verts
+            elif data_type == "SCALAR": acc.count = faces.size
+            elif data_type == "VEC4": acc.count = num_verts
+            
+            if i == 0:
+                acc.min = vertices.min(axis=0).tolist()
+                acc.max = vertices.max(axis=0).tolist()
+            gltf.accessors.append(acc)
+            offset += len(data)
+
+        # 4. Сборка Меша
+        attr = Attributes(POSITION=0, JOINTS_0=2, WEIGHTS_0=3)
+        if colors is not None:
+            attr.COLOR_0 = 4
+            
+        prim = Primitive(attributes=attr, indices=1)
+        gltf.meshes.append(Mesh(primitives=[prim]))
+        
+        # 5. Сборка Скелета
+        joint_nodes = []
+        rel_translations = np.zeros_like(joints)
+        for i in range(num_joints):
+            p = parents[i]
+            if p >= 0:
+                rel_translations[i] = joints[i] - joints[p]
+            else:
+                rel_translations[i] = joints[i]
+                
+        for i in range(num_joints):
+            name = self.SMPLX_JOINT_NAMES[i] if i < len(self.SMPLX_JOINT_NAMES) else f"joint_{i}"
+            node = Node(name=name, translation=rel_translations[i].tolist())
+            joint_nodes.append(len(gltf.nodes))
+            gltf.nodes.append(node)
+            
+        for i, p in enumerate(parents):
+            if p >= 0:
+                if gltf.nodes[joint_nodes[p]].children is None: 
+                    gltf.nodes[joint_nodes[p]].children = []
+                gltf.nodes[joint_nodes[p]].children.append(joint_nodes[i])
+                
+        # 6. Skin (Привязка)
+        ibms = []
+        for i in range(num_joints):
+            m = np.eye(4, dtype=np.float32)
+            m[:3, 3] = joints[i]
+            ibms.append(np.linalg.inv(m))
+            
+        ibm_data = np.array(ibms, dtype=np.float32).tobytes()
+        
+        # Аккуратно добавляем IBM в конец бинарного буфера
+        final_blob_data = full_bin + ibm_data
+        
+        gltf.bufferViews.append(BufferView(buffer=0, byteOffset=offset, byteLength=len(ibm_data)))
+        gltf.accessors.append(Accessor(bufferView=len(gltf.bufferViews)-1, componentType=5126, count=num_joints, type="MAT4"))
+        
+        skin = Skin(joints=joint_nodes, inverseBindMatrices=len(gltf.accessors)-1)
+        gltf.skins.append(skin)
+        
+        # 7. Финальная сцена
+        mesh_node = Node(mesh=0, name="Body")
+        skeleton_root = joint_nodes[0]
+        gltf.nodes.append(mesh_node)
+        gltf.scenes.append(Scene(nodes=[skeleton_root, len(gltf.nodes)-1]))
+        gltf.scene = 0
+        
+        # 8. СОХРАНЕНИЕ БИНАРНИКА (без падений)
+        buffer = Buffer(byteLength=len(final_blob_data))
+        gltf.buffers.append(buffer)
+        gltf.set_binary_blob(final_blob_data)
+        
+        os.makedirs(os.path.dirname(path) or '/tmp', exist_ok=True)
+        gltf.save(path)
+
+    def process_profile(
+        self, user_id: str, height_cm: float, weight_kg: float, body_type: str, gender: str = 'neutral',
+        chest: float = 0, waist: float = 0, hip: float = 0, shoulder: float = 0, calf: float = 0,
+        arm_length: float = 0, torso_length: float = 0, leg_length: float = 0, face_image_url: str = ""
+    ) -> str:
         """
         Main Pipeline Entrypoint for Parametric Generation.
-        Returns a public S3 URL (or local path when S3 is unavailable).
+        Returns a public S3 URL.
         """
         try:
             logger.info(
@@ -182,7 +439,102 @@ class AvatarMLPipeline:
                 f"type={body_type}, gender={gender}"
             )
 
-            betas = self._simulate_profile_betas(height_cm, weight_kg, body_type)
+            user_measurement_overrides = {}
+            if waist > 0:
+                user_measurement_overrides["waist_cm"] = waist
+            if chest > 0:
+                user_measurement_overrides["chest_cm"] = chest
+            if hip > 0:
+                user_measurement_overrides["hips_cm"] = hip
+            if leg_length > 0:
+                user_measurement_overrides["leg_length_cm"] = leg_length
+            if arm_length > 0:
+                user_measurement_overrides["arm_length_cm"] = arm_length
+
+            target_measurements, measurement_weights, measurement_sources = infer_measurement_targets(
+                height_cm=height_cm,
+                weight_kg=weight_kg,
+                body_type=body_type,
+                gender=gender,
+                overrides=user_measurement_overrides,
+                hints={
+                    "shoulder_cm": shoulder,
+                    "calf_cm": calf,
+                    "torso_length_cm": torso_length,
+                },
+            )
+
+            heuristic_betas = self._simulate_profile_betas(
+                height_cm, weight_kg, body_type,
+                chest, waist, hip, shoulder, calf, arm_length, torso_length, leg_length
+            )
+
+            logger.info(
+                "Anthropometric targets for optimization: %s (sources=%s, weights=%s)",
+                target_measurements,
+                measurement_sources,
+                measurement_weights,
+            )
+
+            approximate_hint_fields = []
+            if shoulder > 0:
+                approximate_hint_fields.append("shoulder")
+            if calf > 0:
+                approximate_hint_fields.append("calf")
+            if torso_length > 0:
+                approximate_hint_fields.append("torso_length")
+            if approximate_hint_fields:
+                logger.info(
+                    "Approximate shape hints applied before optimization: %s",
+                    approximate_hint_fields,
+                )
+
+            try:
+                optimizer_iterations = 140 if user_measurement_overrides else 90
+                optimized_betas = optimize_smplx_betas(
+                    target_measurements=target_measurements,
+                    smplx_model_path=self.model_path,
+                    gender=gender,
+                    num_iterations=optimizer_iterations,
+                    target_height_cm=height_cm,
+                    initial_betas=heuristic_betas.detach().cpu().numpy(),
+                    measurement_weights=measurement_weights,
+                    device=str(self.device)
+                )
+                betas = torch.tensor(optimized_betas, dtype=torch.float32, device=self.device)
+
+                smpl_model = self._get_smpl_model(gender)
+                if smpl_model is not None:
+                    with torch.no_grad():
+                        debug_output = smpl_model(betas=betas, return_verts=True)
+                    measured = calculate_measurements(
+                        vertices=debug_output.vertices,
+                        joints=debug_output.joints,
+                        target_height_cm=height_cm,
+                    )
+                    measured_summary = {
+                        measurement_name: round(
+                            float(measured[measurement_name].detach().cpu().item()),
+                            2,
+                        )
+                        for measurement_name in target_measurements
+                        if measurement_name in measured
+                    }
+                    if "height_cm" in measured:
+                        measured_summary["height_cm"] = round(
+                            float(measured["height_cm"].detach().cpu().item()),
+                            2,
+                        )
+                    logger.info(
+                        "Post-optimization height-normalized measurements: %s",
+                        measured_summary,
+                    )
+            except Exception as e:
+                logger.warning(f"Measurement optimization failed ({e}), falling back to heuristic betas.")
+                betas = heuristic_betas
+
+            # Extract skin color if face image provided
+            skin_color = self._extract_skin_color(face_image_url)
 
             import re
             import time
@@ -199,7 +551,7 @@ class AvatarMLPipeline:
             if smpl_model is not None:
                 logger.info(f"Using real SMPL-X pipeline (gender={gender})...")
                 target_height_m = height_cm / 100.0
-                public_url = self._generate_smplx_glb(betas, tmp_path, gender=gender, target_height_m=target_height_m)
+                public_url = self._generate_smplx_glb(betas, tmp_path, gender=gender, target_height_m=target_height_m, skin_color=skin_color)
             else:
                 raise RuntimeError(f"SMPL-X unavailable for gender='{gender}' and neutral fallback also failed.")
 
@@ -231,6 +583,13 @@ pipeline_instance = AvatarMLPipeline()
 def run_avatar_generation(image_bytes: bytes) -> str:
     return pipeline_instance.process_image(image_bytes)
 
-def run_avatar_generation_from_profile(user_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral') -> str:
+def run_avatar_generation_from_profile(
+    user_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral',
+    chest: float = 0, waist: float = 0, hip: float = 0, shoulder: float = 0, calf: float = 0,
+    arm_length: float = 0, torso_length: float = 0, leg_length: float = 0, face_image_url: str = ""
+) -> str:
     """Wrapper for generating avatar purely from profile parameters"""
-    return pipeline_instance.process_profile(user_id, height, weight, body_type, gender)
+    return pipeline_instance.process_profile(
+        user_id, height, weight, body_type, gender,
+        chest, waist, hip, shoulder, calf, arm_length, torso_length, leg_length, face_image_url
+    )

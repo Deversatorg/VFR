@@ -1,19 +1,32 @@
 import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import QuickSetup from './pages/QuickSetup';
-import Home from './pages/Home';
-import Studio from './pages/Studio';
-import Wardrobe from './pages/Wardrobe';
-import Technology from './pages/Technology';
-import Pricing from './pages/Pricing';
-import VerifyEmail from './pages/VerifyEmail';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-import Billing from './pages/Billing';
-import AdminDashboard from './pages/AdminDashboard';
-import ProfileDashboard from './pages/ProfileDashboard';
+import { Toaster } from 'react-hot-toast';
+
+// Auth Pages
+import Login from './pages/auth/Login';
+import Register from './pages/auth/Register';
+import VerifyEmail from './pages/auth/VerifyEmail';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
+
+// Public Pages
+import Home from './pages/public/Home';
+import Technology from './pages/public/Technology';
+import Pricing from './pages/public/Pricing';
+
+// Studio Pages
+import Studio from './pages/studio/Studio';
+import QuickSetup from './pages/studio/QuickSetup';
+
+// User Pages
+import Wardrobe from './pages/user/Wardrobe';
+import Billing from './pages/user/Billing';
+import ProfileDashboard from './pages/user/ProfileDashboard';
+
+// Admin Pages
+import AdminDashboard from './pages/admin/AdminDashboard';
+
+// Layouts & Global Components
 import AppLayout from './components/layout/AppLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import { useAuthStore } from './store/authStore';
@@ -59,6 +72,13 @@ const AuthGuard = ({ children }: { children: ReactNode }) => {
 export default function App() {
   return (
     <BrowserRouter>
+      <Toaster 
+        position="bottom-right" 
+        toastOptions={{ 
+          className: 'dark:bg-gray-800 dark:text-white glass-card', 
+          duration: 3000 
+        }} 
+      />
       <Routes>
         {/* Unauthenticated / Public Routes */}
         <Route path="/" element={<AuthGuard><PublicLayout><Home /></PublicLayout></AuthGuard>} />

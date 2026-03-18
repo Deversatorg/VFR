@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { Canvas } from '@react-three/fiber';
 import { motion } from 'framer-motion';
 import { ArrowRight, Box, Zap, Lock, ScanLine, Activity } from 'lucide-react';
-import HeroModel from '../components/3d/HeroModel';
+import HeroModel from '../../components/3d/HeroModel';
 
 export default function Home() {
     return (

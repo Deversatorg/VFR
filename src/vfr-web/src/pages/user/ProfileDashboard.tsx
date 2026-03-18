@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, CreditCard, LogOut, CheckCircle2, Shield, KeyRound, ChevronRight, Bell } from 'lucide-react';
 import Billing from './Billing';
-import { useAuthStore } from '../store/authStore';
+import { useAuthStore } from '../../store/authStore';
 
 export default function ProfileDashboard() {
     const [activeTab, setActiveTab] = useState<'account' | 'billing' | 'security' | 'notifications'>('account');

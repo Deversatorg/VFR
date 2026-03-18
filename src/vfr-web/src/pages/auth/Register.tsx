@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authClient } from '../api/apiClients';
+import { authClient } from '../../api/apiClients';
 import { Fingerprint, MonitorSmartphone, KeySquare } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'react-hot-toast';
 
 export default function Register() {
     const [email, setEmail] = useState('');
@@ -29,12 +30,15 @@ export default function Register() {
         try {
             await authClient.post('/api/v1/users', { email, password, confirmPassword });
             setSuccess(true);
+            toast.success("Account created successfully! Please verify your email.");
             setTimeout(() => navigate('/verify-email', { state: { email } }), 2500);
         } catch (err: any) {
             if (err.response?.data?.errors) {
                 setFieldErrors(err.response.data.errors);
             }
-            setError(err.response?.data?.detail || err.response?.data?.title || 'Registration failed. Please check your credentials.');
+            const errMsg = err.response?.data?.detail || err.response?.data?.title || 'Registration failed. Please check your credentials.';
+            setError(errMsg);
+            toast.error(errMsg);
         } finally {
             setIsLoading(false);
         }

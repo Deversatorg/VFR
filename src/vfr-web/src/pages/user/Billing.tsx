@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { BillingApi } from '../api/apiClients';
+import { BillingApi } from '../../api/apiClients';
 import { CreditCard, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 interface Subscription {
     id: number;
@@ -63,18 +64,25 @@ export default function Billing() {
     const handleSubscribe = async (planId: number) => {
         setActionLoading(true);
         setMessage(null);
+        const loadingToast = toast.loading("Redirecting to secure checkout...");
         try {
             const response = await BillingApi.checkout({ planId });
             const checkoutUrl = response.data?.url || response.data?.checkoutUrl || response.data?.data?.url || response.data?.data?.checkoutUrl;
             
             if (checkoutUrl && typeof checkoutUrl === 'string') {
+                toast.dismiss(loadingToast);
                 window.location.href = checkoutUrl;
             } else {
+                toast.error("Checkout initiated, but no redirect URL was provided.");
+                toast.dismiss(loadingToast);
                 setMessage({ type: 'success', text: 'Checkout initiated, but no redirect URL was provided by the server.' });
                 fetchBillingData(); // Refresh just in case it was a direct upgrade
             }
         } catch (err: any) {
-            setMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to initialize checkout.' });
+            const errMsg = err.response?.data?.detail || 'Failed to initialize checkout.';
+            toast.error(errMsg);
+            toast.dismiss(loadingToast);
+            setMessage({ type: 'error', text: errMsg });
         } finally {
             setActionLoading(false);
         }
@@ -152,7 +160,7 @@ export default function Billing() {
             {/* Pricing Cards */}
             <h2 className="text-xl font-semibold text-white pt-4">Available Plans</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {(plans || []).map((plan) => {
+                {(plans || []).map((plan: Plan) => {
                     const isActive = subscription?.planName === plan.name;
                     return (
                         <div key={plan.id} className={`bg-[#111111] border rounded-2xl p-6 sm:p-8 flex flex-col ${isActive ? 'border-primary shadow-[0_0_30px_rgba(19,91,236,0.15)] relative overflow-hidden' : 'border-white/5'}`}>
@@ -166,7 +174,7 @@ export default function Billing() {
                             </div>
 
                             <ul className="space-y-4 mb-8 flex-1">
-                                {(plan.features || []).map((feature, idx) => (
+                                {(plan.features || []).map((feature: string, idx: number) => (
                                     <li key={idx} className="flex items-start gap-3">
                                         <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
                                         <span className="text-sm text-gray-300">{feature}</span>

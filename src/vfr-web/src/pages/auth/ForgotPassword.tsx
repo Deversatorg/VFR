@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { SessionApi } from '../api/apiClients';
-import { MailCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { SessionApi } from '../../api/apiClients';
+import { KeyRound } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'react-hot-toast';
 
-export default function VerifyEmail() {
-    const location = useLocation();
-    const [email, setEmail] = useState(location.state?.email || '');
-    const [code, setCode] = useState('');
+export default function ForgotPassword() {
+    const [email, setEmail] = useState('');
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -19,11 +18,15 @@ export default function VerifyEmail() {
         setError('');
         setSuccess('');
         try {
-            await SessionApi.verifyEmail({ email, code });
-            setSuccess('Email successfully verified! You can now log in.');
-            setTimeout(() => navigate('/login'), 2000);
+            await SessionApi.forgotPassword({ email });
+            const msg = 'If an account matches that email, we have sent a reset code.';
+            setSuccess(msg);
+            toast.success(msg);
+            setTimeout(() => navigate('/reset-password'), 3000);
         } catch (err: any) {
-            setError(err.response?.data?.detail || err.response?.data?.title || 'Verification failed. Invalid code.');
+            const errMsg = err.response?.data?.detail || err.response?.data?.title || 'Failed to request password reset.';
+            setError(errMsg);
+            toast.error(errMsg);
         } finally {
             setIsLoading(false);
         }
@@ -31,7 +34,6 @@ export default function VerifyEmail() {
 
     return (
         <div className="min-h-screen w-full bg-[#050505] font-sans text-white flex justify-center items-center p-6 relative overflow-hidden">
-            {/* Dark abstract bg layer */}
             <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[150px] translate-x-1/2 -translate-y-1/2 pointer-events-none" />
             
             <motion.div 
@@ -44,10 +46,10 @@ export default function VerifyEmail() {
                 <div className="mb-10 text-center">
                     <div className="w-16 h-16 bg-gradient-to-b from-gray-800 to-gray-900 border border-white/10 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-inner relative overflow-hidden group">
                         <div className="absolute inset-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                        <MailCheck className="w-7 h-7 text-white relative z-10" />
+                        <KeyRound className="w-7 h-7 text-white relative z-10" />
                     </div>
-                    <h2 className="text-[28px] font-semibold text-white tracking-tight mb-2">Verify Email</h2>
-                    <p className="text-[#a1a1aa] text-sm">Enter the code sent to your inbox</p>
+                    <h2 className="text-[28px] font-semibold text-white tracking-tight mb-2">Forgot Password</h2>
+                    <p className="text-[#a1a1aa] text-sm">We'll send you a secure reset code</p>
                 </div>
 
                 {error && (
@@ -63,7 +65,7 @@ export default function VerifyEmail() {
 
                 <form onSubmit={handleSubmit} className="space-y-5">
                     <div className="space-y-1.5">
-                        <label className="text-[12px] font-medium uppercase tracking-widest text-gray-400 ml-1">Email Address</label>
+                        <label className="text-[12px] font-medium uppercase tracking-widest text-gray-400 ml-1">Account Email</label>
                         <input
                             type="email"
                             value={email}
@@ -73,23 +75,12 @@ export default function VerifyEmail() {
                             className="w-full px-5 py-4 bg-[#111111] border border-white/[0.06] focus:ring-primary focus:border-primary rounded-2xl text-white placeholder-gray-600 focus:ring-1 focus:outline-none transition-all duration-300 shadow-inner"
                         />
                     </div>
-                    <div className="space-y-1.5">
-                        <label className="text-[12px] font-medium uppercase tracking-widest text-gray-400 ml-1">Verification Code</label>
-                        <input
-                            type="text"
-                            value={code}
-                            onChange={e => setCode(e.target.value)}
-                            required
-                            placeholder="123456"
-                            className="w-full px-5 py-4 bg-[#111111] border border-white/[0.06] focus:ring-primary focus:border-primary rounded-2xl text-white placeholder-gray-600 tracking-[0.5em] text-center font-mono focus:ring-1 focus:outline-none transition-all duration-300 shadow-inner"
-                        />
-                    </div>
                     <button
                         type="submit"
                         disabled={isLoading}
                         className="w-full py-4 px-4 bg-primary hover:bg-primary-dark active:scale-[0.98] text-white font-medium rounded-2xl transition-all duration-300 shadow-[0_0_30px_rgba(19,91,236,0.25)] disabled:opacity-70 flex justify-center mt-6"
                     >
-                        {isLoading ? 'Verifying...' : 'Verify Email'}
+                        {isLoading ? 'Sending...' : 'Send Reset Link'}
                     </button>
                 </form>
 

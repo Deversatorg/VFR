@@ -22,7 +22,7 @@ COPY avatar.proto ./avatar.proto
 RUN python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. avatar.proto
 
 # Step 4: Copy application code
-COPY main.py worker.py ml_pipeline.py garment_pipeline.py s3_client.py ./
+COPY main.py worker.py ml_pipeline.py garment_pipeline.py s3_client.py anthropometry.py measurement_optimizer.py extract_vertex_loops.py ./
 COPY models/ models/
 
 EXPOSE 50051 8000

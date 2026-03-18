@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
-import { SessionApi } from '../api/apiClients';
+import { useAuthStore } from '../../store/authStore';
+import { SessionApi } from '../../api/apiClients';
+import { toast } from 'react-hot-toast';
 import { Fingerprint, MonitorSmartphone } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -27,6 +28,7 @@ export default function Login() {
             const token = resData?.data?.token?.accessToken || resData?.token?.accessToken || resData?.accessToken || resData?.token;
             if (token && typeof token === 'string') {
                 login(token);
+                toast.success("Welcome back!");
                 navigate('/setup');
             }
         } catch (regularErr: any) {
@@ -45,7 +47,9 @@ export default function Login() {
                 if (regularErr.response?.data?.errors) {
                     setFieldErrors(regularErr.response.data.errors);
                 }
-                setError(regularErr.response?.data?.detail || regularErr.response?.data?.title || 'Login failed. Please check your credentials.');
+                const errMsg = regularErr.response?.data?.detail || regularErr.response?.data?.title || 'Login failed. Please check your credentials.';
+                setError(errMsg);
+                toast.error(errMsg);
             }
         } finally {
             setIsLoading(false);

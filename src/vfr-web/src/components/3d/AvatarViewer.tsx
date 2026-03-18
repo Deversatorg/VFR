@@ -22,28 +22,38 @@ export interface AvatarViewerProps {
 
 const SPINE_CANDIDATES = [
     'mixamorig:Spine2', 'mixamorig:Spine1', 'mixamorig:Spine',
-    'Spine2', 'Spine1', 'Spine', 'Chest', 'chest', 'spine2', 'spine1', 'spine',
+    'Spine2', 'Spine1', 'Spine', 'Chest', 'chest', 
+    'spine_3', 'spine_2', 'spine_1', 'spine', 'pelvis'
 ];
 
-function findSpineBone(root: THREE.Object3D): THREE.Bone | null {
-    const map = new Map<string, THREE.Bone>();
+function findSpineAnchor(root: THREE.Object3D): THREE.Object3D | null {
+    const boneMap = new Map<string, THREE.Object3D>();
+    const nodeMap = new Map<string, THREE.Object3D>();
     root.traverse(node => {
-        if ((node as THREE.Bone).isBone && !map.has(node.name))
-            map.set(node.name, node as THREE.Bone);
-    });
-    for (const name of SPINE_CANDIDATES) {
-        const b = map.get(name);
-        if (b) return b;
-    }
-    // Any bone with "spine" or "chest" in its name
-    let fall: THREE.Bone | null = null;
-    root.traverse(node => {
-        if (!fall && (node as THREE.Bone).isBone) {
-            const l = node.name.toLowerCase();
-            if (l.includes('spine') || l.includes('chest')) fall = node as THREE.Bone;
+        if (node.name && !nodeMap.has(node.name)) {
+            nodeMap.set(node.name, node);
+        }
+        if ((node as THREE.Bone).isBone && !boneMap.has(node.name)) {
+            boneMap.set(node.name, node);
         }
     });
-    return fall;
+    for (const name of SPINE_CANDIDATES) {
+        const bone = boneMap.get(name);
+        if (bone) return bone;
+        const node = nodeMap.get(name);
+        if (node) return node;
+    }
+    // Any named node with "spine", "chest", or "pelvis" in its name.
+    let fallback: THREE.Object3D | null = null;
+    root.traverse(node => {
+        if (!fallback && node.name) {
+            const l = node.name.toLowerCase();
+            if (l.includes('spine') || l.includes('chest') || l.includes('pelvis')) {
+                fallback = node;
+            }
+        }
+    });
+    return fallback;
 }
 
 // ─── Debug Panel ──────────────────────────────────────────────────────────────
@@ -232,15 +242,26 @@ function LoadedAvatar({
     const [gRotZ, setGRotZ] = useState(0);
 
     // ── Spine bone (memoised — only changes when the avatar scene changes) ──
-    const spineBone = useMemo(() => findSpineBone(avatarGltf.scene), [avatarGltf.scene]);
+    const spineAnchor = useMemo(() => findSpineAnchor(avatarGltf.scene), [avatarGltf.scene]);
 
     // ── Animation crossfade ───────────────────────────────────────────────
     useEffect(() => {
-        if (!actions) return;
+        if (!actions || Object.keys(actions).length === 0) return;
         Object.values(actions).forEach(a => a?.fadeOut(0.4));
         const target = actions[animation] ?? actions[names[0]];
         target?.reset().fadeIn(0.4).play();
     }, [animation, actions, names]);
+
+    // ── Procedural animation fallback (Breathing) ─────────────────────────
+    useFrame((state) => {
+        const hasActions = actions && Object.keys(actions).length > 0;
+        if (!hasActions && spineAnchor) {
+            const t = state.clock.getElapsedTime();
+            // Subtle breathing effect on the spine
+            spineAnchor.rotation.x = Math.sin(t * 1.5) * 0.02;
+            spineAnchor.scale.setScalar(1 + Math.sin(t * 1.5) * 0.005);
+        }
+    });
 
     // ── Morph targets ─────────────────────────────────────────────────────
     useEffect(() => {
@@ -275,7 +296,7 @@ function LoadedAvatar({
             {/* Garment — portaled into the spine bone */}
             {showShirt && garmentScene && (
                 <>
-                    {spineBone
+                    {spineAnchor
                         ? createPortal(
                             <primitive
                                 object={garmentScene}
@@ -283,7 +304,7 @@ function LoadedAvatar({
                                 rotation={[gRotX, gRotY, gRotZ]}
                                 scale={gScale}
                             />,
-                            spineBone
+                            spineAnchor
                         )
                         : /* no bone found — render in world space as fallback */
                         <primitive
@@ -295,7 +316,7 @@ function LoadedAvatar({
                     }
 
                     {/* Diagnostic: red sphere when no bone was found */}
-                    {!spineBone && (
+                    {!spineAnchor && (
                         <mesh position={[0, 1, 0]}>
                             <sphereGeometry args={[0.08, 12, 12]} />
                             <meshBasicMaterial color="#ff0000" wireframe />
@@ -305,7 +326,7 @@ function LoadedAvatar({
                     <DebugPanel
                         state={{ gScale, gPosX, gPosY, gPosZ, gRotX, gRotY, gRotZ }}
                         setters={{ setGScale, setGPosX, setGPosY, setGPosZ, setGRotX, setGRotY, setGRotZ }}
-                        boneName={spineBone?.name ?? ''}
+                        boneName={spineAnchor?.name ?? ''}
                     />
                 </>
             )}

@@ -1,6 +1,5 @@
 import os
 import shutil
-import tempfile
 from celery import Celery
 from ml_pipeline import run_avatar_generation, run_avatar_generation_from_profile
 
@@ -43,14 +42,21 @@ def generate_3d_avatar(self, task_id: str, image_bytes: bytes):
         raise Exception(str(e))
 
 @celery_app.task(bind=True, name="generate_3d_avatar_from_profile")
-def generate_3d_avatar_from_profile(self, task_id: str, user_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral'):
+def generate_3d_avatar_from_profile(
+    self, task_id: str, user_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral',
+    chest: float = 0, waist: float = 0, hip: float = 0, shoulder: float = 0, calf: float = 0,
+    arm_length: float = 0, torso_length: float = 0, leg_length: float = 0, face_image_url: str = ""
+):
     """Parametric SMPL-X avatar generation. Returns S3 public URL."""
     print(f"[{task_id}] Starting parametric avatar generation (gender={gender}, user={user_id})...")
     self.update_state(state='PROGRESS', meta={'progress': 10, 'message': f'Running SMPL-X ({gender})...'})
 
     try:
         # pipeline generates the mesh, uploads to S3, and returns the public URL
-        model_url = run_avatar_generation_from_profile(user_id, height, weight, body_type, gender)
+        model_url = run_avatar_generation_from_profile(
+            user_id, height, weight, body_type, gender,
+            chest, waist, hip, shoulder, calf, arm_length, torso_length, leg_length, face_image_url
+        )
 
         self.update_state(state='PROGRESS', meta={'progress': 95, 'message': 'Finalising...'})
         return {

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SessionApi } from '../api/apiClients';
+import { SessionApi } from '../../api/apiClients';
 import { ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'react-hot-toast';
 
 export default function ResetPassword() {
     const [email, setEmail] = useState('');
@@ -22,13 +23,17 @@ export default function ResetPassword() {
         setFieldErrors({});
         try {
             await SessionApi.resetPassword({ email, code, newPassword });
-            setSuccess('Password reset successfully! You can now log in.');
+            const msg = 'Password reset successfully! You can now log in.';
+            setSuccess(msg);
+            toast.success(msg);
             setTimeout(() => navigate('/login'), 2000);
         } catch (err: any) {
             if (err.response?.data?.errors) {
                 setFieldErrors(err.response.data.errors);
             }
-            setError(err.response?.data?.detail || err.response?.data?.title || 'Failed to reset password. Check your code.');
+            const errMsg = err.response?.data?.detail || err.response?.data?.title || 'Failed to reset password. Check your code.';
+            setError(errMsg);
+            toast.error(errMsg);
         } finally {
             setIsLoading(false);
         }

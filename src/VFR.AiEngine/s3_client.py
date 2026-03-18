@@ -89,16 +89,31 @@ def upload_glb(local_path: str, s3_key: str) -> str:
 def delete_old_user_avatars(user_id: str):
     """
     Deletes any existing objects in the bucket that start with avatars/profile_{user_id}_.
+    This prevents old timestamped models from accumulating in the bucket.
     """
     if s3_client is None:
+        logger.warning(f"S3 client not initialized. Skipping cleanup for user {user_id}.")
         return
-        
+
     prefix = f"avatars/profile_{user_id}_"
+    logger.info(f"Cleaning up old avatars for user {user_id} with prefix: {prefix}")
+    
     try:
+        # List all objects with the given prefix
         response = s3_client.list_objects_v2(Bucket=S3_BUCKET_NAME, Prefix=prefix)
-        if 'Contents' in response:
-            for obj in response['Contents']:
-                s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=obj['Key'])
-                logger.info(f"Deleted old avatar: {obj['Key']}")
+        
+        objects_to_delete = response.get('Contents', [])
+        if not objects_to_delete:
+            logger.info(f"No old avatars found for user {user_id}.")
+            return
+
+        for obj in objects_to_delete:
+            key = obj['Key']
+            try:
+                s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=key)
+                logger.info(f"Successfully deleted old avatar: {key}")
+            except Exception as del_e:
+                logger.error(f"Failed to delete individual object {key}: {str(del_e)}")
+
     except Exception as e:
-        logger.warning(f"Failed to delete old avatars for {user_id}: {e}")
+        logger.error(f"Failed to list or delete old avatars for user {user_id}: {str(e)}")

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AdminApi } from '../api/apiClients';
+import { AdminApi } from '../../api/apiClients';
 import { ShieldAlert, Trash2, Search, Loader2 } from 'lucide-react';
 
 interface User {
