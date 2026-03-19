@@ -12,36 +12,40 @@ SUPPORTED_MEASUREMENT_TARGETS = (
 
 ANTHROPOMETRIC_PRIORS = {
     "male": {
-        "bmi_center": 21.5,
-        "chest_ratio": 0.525,
-        "waist_ratio": 0.450,
-        "hips_ratio": 0.510,
-        "arm_ratio": 0.375,
-        "leg_ratio": 0.485,
-        "bmi_to_chest": 1.6,
-        "bmi_to_waist": 2.4,
+        "bmi_center": 22.0,
+        "chest_ratio": 0.540,
+        "waist_ratio": 0.440,
+        "hips_ratio": 0.525,
+        # Limb ratios are calibrated to the current measurement definition in
+        # measurement_optimizer.py, which includes collar/hand and pelvis/foot
+        # segments. These values are intentionally higher than the older
+        # shoulder-elbow-wrist proxy.
+        "arm_ratio": 0.374,
+        "leg_ratio": 0.506,
+        "bmi_to_chest": 1.5,
+        "bmi_to_waist": 2.0,
         "bmi_to_hips": 1.4,
     },
     "female": {
         "bmi_center": 21.0,
         "chest_ratio": 0.530,
         "waist_ratio": 0.420,
-        "hips_ratio": 0.540,
-        "arm_ratio": 0.372,
-        "leg_ratio": 0.482,
+        "hips_ratio": 0.575,
+        "arm_ratio": 0.368,
+        "leg_ratio": 0.487,
         "bmi_to_chest": 1.2,
         "bmi_to_waist": 2.1,
         "bmi_to_hips": 1.9,
     },
     "neutral": {
-        "bmi_center": 21.25,
-        "chest_ratio": 0.5275,
-        "waist_ratio": 0.435,
-        "hips_ratio": 0.525,
-        "arm_ratio": 0.3735,
-        "leg_ratio": 0.4835,
-        "bmi_to_chest": 1.4,
-        "bmi_to_waist": 2.25,
+        "bmi_center": 21.5,
+        "chest_ratio": 0.535,
+        "waist_ratio": 0.430,
+        "hips_ratio": 0.550,
+        "arm_ratio": 0.372,
+        "leg_ratio": 0.494,
+        "bmi_to_chest": 1.35,
+        "bmi_to_waist": 2.05,
         "bmi_to_hips": 1.65,
     },
 }
@@ -50,21 +54,21 @@ ANTHROPOMETRIC_PRIORS = {
 BODY_TYPE_ADJUSTMENTS = {
     "male": {
         "regular": {"chest_cm": 0.0, "waist_cm": 0.0, "hips_cm": 0.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
-        "slim": {"chest_cm": -1.5, "waist_cm": -3.5, "hips_cm": -1.5, "arm_ratio": 0.002, "leg_ratio": 0.003},
-        "athletic": {"chest_cm": 3.5, "waist_cm": -4.0, "hips_cm": 0.5, "arm_ratio": 0.004, "leg_ratio": 0.005},
-        "curvy": {"chest_cm": 1.5, "waist_cm": 3.0, "hips_cm": 4.0, "arm_ratio": -0.001, "leg_ratio": -0.0015},
+        "slim": {"chest_cm": 0.0, "waist_cm": 0.0, "hips_cm": 0.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
+        "athletic": {"chest_cm": 3.0, "waist_cm": -2.0, "hips_cm": 0.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
+        "curvy": {"chest_cm": 2.0, "waist_cm": 2.0, "hips_cm": 2.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
     },
     "female": {
         "regular": {"chest_cm": 0.0, "waist_cm": 0.0, "hips_cm": 0.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
-        "slim": {"chest_cm": -1.0, "waist_cm": -2.5, "hips_cm": -0.5, "arm_ratio": 0.001, "leg_ratio": 0.002},
-        "athletic": {"chest_cm": 1.0, "waist_cm": -4.0, "hips_cm": 1.0, "arm_ratio": 0.003, "leg_ratio": 0.004},
-        "curvy": {"chest_cm": 3.0, "waist_cm": 1.0, "hips_cm": 5.0, "arm_ratio": -0.0005, "leg_ratio": -0.001},
+        "slim": {"chest_cm": 0.0, "waist_cm": 0.0, "hips_cm": 0.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
+        "athletic": {"chest_cm": 2.0, "waist_cm": -2.0, "hips_cm": 1.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
+        "curvy": {"chest_cm": 2.0, "waist_cm": 0.0, "hips_cm": 4.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
     },
     "neutral": {
         "regular": {"chest_cm": 0.0, "waist_cm": 0.0, "hips_cm": 0.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
-        "slim": {"chest_cm": -1.25, "waist_cm": -3.0, "hips_cm": -1.0, "arm_ratio": 0.0015, "leg_ratio": 0.0025},
-        "athletic": {"chest_cm": 2.0, "waist_cm": -4.0, "hips_cm": 0.75, "arm_ratio": 0.0035, "leg_ratio": 0.0045},
-        "curvy": {"chest_cm": 2.25, "waist_cm": 2.0, "hips_cm": 4.5, "arm_ratio": -0.00075, "leg_ratio": -0.00125},
+        "slim": {"chest_cm": 0.0, "waist_cm": 0.0, "hips_cm": 0.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
+        "athletic": {"chest_cm": 2.5, "waist_cm": -2.0, "hips_cm": 0.5, "arm_ratio": 0.0, "leg_ratio": 0.0},
+        "curvy": {"chest_cm": 2.0, "waist_cm": 1.0, "hips_cm": 3.0, "arm_ratio": 0.0, "leg_ratio": 0.0},
     },
 }
 
@@ -73,24 +77,27 @@ MEASUREMENT_RATIO_BOUNDS = {
     "chest_cm": (0.42, 0.72),
     "waist_cm": (0.34, 0.70),
     "hips_cm": (0.42, 0.74),
-    "arm_length_cm": (0.33, 0.42),
+    # These bounds should cover realistic anthropometric ranges for the
+    # current limb-length definition. The old upper bound (0.35) clipped
+    # normal adult arms into systematically short values.
+    "arm_length_cm": (0.34, 0.40),
     "leg_length_cm": (0.43, 0.53),
 }
 
 DEFAULT_INFERRED_WEIGHTS = {
-    "chest_cm": 1.2,
-    "waist_cm": 1.4,
-    "hips_cm": 1.1,
-    "arm_length_cm": 0.6,
-    "leg_length_cm": 0.7,
+    "chest_cm": 1.3,
+    "waist_cm": 1.5,
+    "hips_cm": 1.2,
+    "arm_length_cm": 0.2,
+    "leg_length_cm": 0.35,
 }
 
 DEFAULT_USER_WEIGHTS = {
     "chest_cm": 3.0,
     "waist_cm": 3.0,
     "hips_cm": 3.0,
-    "arm_length_cm": 2.0,
-    "leg_length_cm": 2.0,
+    "arm_length_cm": 0.9,
+    "leg_length_cm": 1.1,
 }
 
 
@@ -117,6 +124,38 @@ def _normalize_body_type(body_type: str) -> str:
     if body_key not in {"slim", "regular", "athletic", "curvy"}:
         body_key = "regular"
     return body_key
+
+
+def _apply_bmi_shape_refinement(
+    *,
+    targets: Dict[str, float],
+    gender_key: str,
+    body_key: str,
+    bmi: float,
+) -> None:
+    # The base priors already fit the validation set fairly well on average,
+    # so this refinement only nudges the edge cases that still look visually
+    # off: especially very lean male slim/athletic bodies, which otherwise
+    # keep too much torso and hip volume.
+    if gender_key == "male":
+        lean_factor = _clamp((21.0 - bmi) / 4.0, 0.0, 1.0)
+        if body_key == "athletic" and lean_factor > 0:
+            targets["chest_cm"] -= 3.0 * lean_factor
+            targets["waist_cm"] += 1.2 * lean_factor
+            targets["hips_cm"] -= 1.5 * lean_factor
+        elif body_key == "slim" and lean_factor > 0:
+            targets["chest_cm"] -= 1.5 * lean_factor
+            targets["waist_cm"] += 0.8 * lean_factor
+            targets["hips_cm"] -= 1.0 * lean_factor
+
+    if gender_key == "female":
+        lean_factor = _clamp((20.5 - bmi) / 4.0, 0.0, 1.0)
+        if body_key == "slim" and lean_factor > 0:
+            targets["chest_cm"] -= 1.5 * lean_factor
+            targets["hips_cm"] -= 1.0 * lean_factor
+        elif body_key == "athletic" and lean_factor > 0:
+            targets["chest_cm"] -= 0.75 * lean_factor
+            targets["hips_cm"] -= 0.5 * lean_factor
 
 
 def infer_measurement_targets(
@@ -146,6 +185,13 @@ def infer_measurement_targets(
         "arm_length_cm": safe_height_cm * (priors["arm_ratio"] + adjustments["arm_ratio"]),
         "leg_length_cm": safe_height_cm * (priors["leg_ratio"] + adjustments["leg_ratio"]),
     }
+
+    _apply_bmi_shape_refinement(
+        targets=targets,
+        gender_key=gender_key,
+        body_key=body_key,
+        bmi=bmi,
+    )
 
     hint_values = hints or {}
     shoulder_hint = float(hint_values.get("shoulder_cm", 0.0) or 0.0)

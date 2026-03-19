@@ -7,7 +7,8 @@ import numpy as np
 import smplx
 import torch
 
-from measurement_optimizer import calculate_measurements, optimize_smplx_betas
+from anthropometry import infer_measurement_targets
+from measurement_optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
 
 
 SUPPORTED_TARGETS = (
@@ -16,6 +17,12 @@ SUPPORTED_TARGETS = (
     "hips_cm",
     "arm_length_cm",
     "leg_length_cm",
+)
+
+TORSO_TARGETS = (
+    "chest_cm",
+    "waist_cm",
+    "hips_cm",
 )
 
 
@@ -46,7 +53,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--iterations",
         type=int,
-        default=120,
+        default=160,
         help="Number of optimizer iterations per case.",
     )
     return parser.parse_args()
@@ -114,7 +121,7 @@ def _simulate_profile_betas(
     if arm_length > 0:
         proportion_bias += np.clip((arm_length / max(height_cm, 1.0)) - 0.37, -0.05, 0.05)
     if leg_length > 0:
-        proportion_bias += np.clip((leg_length / max(height_cm, 1.0)) - 0.48, -0.06, 0.06)
+        proportion_bias += np.clip((leg_length / max(height_cm, 1.0)) - 0.495, -0.06, 0.06)
     if proportion_bias != 0.0:
         betas[0, 1] += float(np.clip(proportion_bias, -0.08, 0.08))
 
@@ -165,13 +172,24 @@ def _normalize_case(case: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _compute_error_report(
+def _extract_predicted_values(
     measured: Dict[str, torch.Tensor],
+    measurement_names: List[str],
+) -> Dict[str, float]:
+    return {
+        measurement_name: float(measured[measurement_name].detach().cpu().item())
+        for measurement_name in measurement_names
+        if measurement_name in measured
+    }
+
+
+def _compute_error_report(
+    predicted: Dict[str, float],
     targets: Dict[str, float],
 ) -> Dict[str, Dict[str, float]]:
     report: Dict[str, Dict[str, float]] = {}
     for measurement_name, target_value in targets.items():
-        predicted_value = float(measured[measurement_name].detach().cpu().item())
+        predicted_value = float(predicted[measurement_name])
         abs_error = abs(predicted_value - target_value)
         rel_error = abs_error / max(abs(target_value), 1.0)
         report[measurement_name] = {
@@ -184,28 +202,56 @@ def _compute_error_report(
 
 
 def _summarize_cases(case_results: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
-    per_measurement_errors: Dict[str, List[float]] = {name: [] for name in SUPPORTED_TARGETS}
-    baseline_errors: Dict[str, List[float]] = {name: [] for name in SUPPORTED_TARGETS}
+    category_errors = {
+        "inference": {name: [] for name in SUPPORTED_TARGETS},
+        "heuristic": {name: [] for name in SUPPORTED_TARGETS},
+        "auto": {name: [] for name in SUPPORTED_TARGETS},
+        "exact": {name: [] for name in SUPPORTED_TARGETS},
+    }
 
     for case_result in case_results:
-        for measurement_name, details in case_result["optimized"].items():
-            per_measurement_errors[measurement_name].append(details["abs_error"])
-        for measurement_name, details in case_result["heuristic"].items():
-            baseline_errors[measurement_name].append(details["abs_error"])
+        for category_name in category_errors:
+            for measurement_name, details in case_result[category_name].items():
+                category_errors[category_name][measurement_name].append(details["abs_error"])
 
     summary: Dict[str, Dict[str, float]] = {}
     for measurement_name in SUPPORTED_TARGETS:
-        optimized_values = per_measurement_errors[measurement_name]
-        if not optimized_values:
+        if not category_errors["auto"][measurement_name]:
             continue
-        heuristic_values = baseline_errors[measurement_name]
         summary[measurement_name] = {
-            "optimized_mae": round(float(np.mean(optimized_values)), 4),
-            "optimized_max_abs_error": round(float(np.max(optimized_values)), 4),
-            "heuristic_mae": round(float(np.mean(heuristic_values)), 4),
-            "heuristic_max_abs_error": round(float(np.max(heuristic_values)), 4),
+            "inference_mae": round(float(np.mean(category_errors["inference"][measurement_name])), 4),
+            "heuristic_mae": round(float(np.mean(category_errors["heuristic"][measurement_name])), 4),
+            "auto_mae": round(float(np.mean(category_errors["auto"][measurement_name])), 4),
+            "exact_mae": round(float(np.mean(category_errors["exact"][measurement_name])), 4),
+            "inference_max_abs_error": round(float(np.max(category_errors["inference"][measurement_name])), 4),
+            "heuristic_max_abs_error": round(float(np.max(category_errors["heuristic"][measurement_name])), 4),
+            "auto_max_abs_error": round(float(np.max(category_errors["auto"][measurement_name])), 4),
+            "exact_max_abs_error": round(float(np.max(category_errors["exact"][measurement_name])), 4),
         }
     return summary
+
+
+def _mean_abs_error(report: Dict[str, Dict[str, float]]) -> float:
+    if not report:
+        return 0.0
+    return float(np.mean([item["abs_error"] for item in report.values()]))
+
+
+def _build_worst_cases(case_results: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, float]]:
+    ranked = sorted(
+        case_results,
+        key=lambda case_result: _mean_abs_error(case_result["auto"]),
+        reverse=True,
+    )
+    return [
+        {
+            "name": case_result["name"],
+            "auto_mean_abs_error": round(_mean_abs_error(case_result["auto"]), 4),
+            "exact_mean_abs_error": round(_mean_abs_error(case_result["exact"]), 4),
+            "inference_mean_abs_error": round(_mean_abs_error(case_result["inference"]), 4),
+        }
+        for case_result in ranked[:limit]
+    ]
 
 
 def main() -> None:
@@ -228,49 +274,134 @@ def main() -> None:
                 ext="npz",
             ).to(torch_device)
 
+        inferred_targets, inferred_weights, inferred_sources = infer_measurement_targets(
+            height_cm=case["height_cm"],
+            weight_kg=case["weight_kg"],
+            body_type=case["body_type"],
+            gender=gender,
+            overrides={},
+            hints={
+                "shoulder_cm": case["shoulder"],
+                "calf_cm": case["calf"],
+                "torso_length_cm": case["torso_length"],
+            },
+        )
+
         body_model = body_models[gender]
         heuristic_betas = _simulate_profile_betas(
             height_cm=case["height_cm"],
             weight_kg=case["weight_kg"],
             body_type=case["body_type"],
             device=torch_device,
-            chest=case["targets"].get("chest_cm", 0.0),
+            chest=inferred_targets.get("chest_cm", 0.0),
             shoulder=case["shoulder"],
-            waist=case["targets"].get("waist_cm", 0.0),
-            hip=case["targets"].get("hips_cm", 0.0),
-            arm_length=case["targets"].get("arm_length_cm", 0.0),
-            leg_length=case["targets"].get("leg_length_cm", 0.0),
+            waist=inferred_targets.get("waist_cm", 0.0),
+            hip=inferred_targets.get("hips_cm", 0.0),
+            arm_length=inferred_targets.get("arm_length_cm", 0.0),
+            leg_length=inferred_targets.get("leg_length_cm", 0.0),
         )
 
         with torch.no_grad():
             heuristic_output = body_model(betas=heuristic_betas, return_verts=True)
-        heuristic_measurements = calculate_measurements(
+        heuristic_vertices, heuristic_joints, _ = apply_proportion_warp(
             vertices=heuristic_output.vertices,
             joints=heuristic_output.joints,
+            parents=body_model.parents,
+            weights=body_model.lbs_weights,
+            target_measurements=inferred_targets,
+            target_height_cm=case["height_cm"],
+        )
+        heuristic_measurements = calculate_measurements(
+            vertices=heuristic_vertices,
+            joints=heuristic_joints,
             target_height_cm=case["height_cm"],
         )
 
-        optimized_betas = optimize_smplx_betas(
-            target_measurements=case["targets"],
+        inferred_shape_targets = {
+            measurement_name: inferred_targets[measurement_name]
+            for measurement_name in TORSO_TARGETS
+            if measurement_name in inferred_targets
+        }
+        inferred_shape_weights = {
+            measurement_name: inferred_weights[measurement_name]
+            for measurement_name in inferred_shape_targets
+            if measurement_name in inferred_weights
+        }
+
+        auto_betas = optimize_smplx_betas(
+            target_measurements=inferred_shape_targets,
+            smplx_model_path=args.model_path,
+            gender=gender,
+            num_iterations=max(100, min(args.iterations, 140)),
+            device=args.device,
+            target_height_cm=case["height_cm"],
+            initial_betas=heuristic_betas.detach().cpu().numpy(),
+            measurement_weights=inferred_shape_weights,
+        )
+        auto_betas_tensor = torch.tensor(auto_betas, dtype=torch.float32, device=torch_device)
+
+        with torch.no_grad():
+            auto_output = body_model(betas=auto_betas_tensor, return_verts=True)
+        auto_vertices, auto_joints, _ = apply_proportion_warp(
+            vertices=auto_output.vertices,
+            joints=auto_output.joints,
+            parents=body_model.parents,
+            weights=body_model.lbs_weights,
+            target_measurements=inferred_targets,
+            target_height_cm=case["height_cm"],
+        )
+        auto_measurements = calculate_measurements(
+            vertices=auto_vertices,
+            joints=auto_joints,
+            target_height_cm=case["height_cm"],
+        )
+
+        exact_shape_targets = {
+            measurement_name: case["targets"][measurement_name]
+            for measurement_name in TORSO_TARGETS
+            if measurement_name in case["targets"]
+        }
+        exact_betas = optimize_smplx_betas(
+            target_measurements=exact_shape_targets,
             smplx_model_path=args.model_path,
             gender=gender,
             num_iterations=args.iterations,
             device=args.device,
             target_height_cm=case["height_cm"],
-            initial_betas=heuristic_betas.detach().cpu().numpy(),
+            initial_betas=auto_betas,
         )
-        optimized_betas_tensor = torch.tensor(optimized_betas, dtype=torch.float32, device=torch_device)
+        exact_betas_tensor = torch.tensor(exact_betas, dtype=torch.float32, device=torch_device)
 
         with torch.no_grad():
-            optimized_output = body_model(betas=optimized_betas_tensor, return_verts=True)
-        optimized_measurements = calculate_measurements(
-            vertices=optimized_output.vertices,
-            joints=optimized_output.joints,
+            exact_output = body_model(betas=exact_betas_tensor, return_verts=True)
+        exact_vertices, exact_joints, _ = apply_proportion_warp(
+            vertices=exact_output.vertices,
+            joints=exact_output.joints,
+            parents=body_model.parents,
+            weights=body_model.lbs_weights,
+            target_measurements=case["targets"],
+            target_height_cm=case["height_cm"],
+        )
+        exact_measurements = calculate_measurements(
+            vertices=exact_vertices,
+            joints=exact_joints,
             target_height_cm=case["height_cm"],
         )
 
-        heuristic_report = _compute_error_report(heuristic_measurements, case["targets"])
-        optimized_report = _compute_error_report(optimized_measurements, case["targets"])
+        target_measurement_names = list(case["targets"].keys())
+        inference_report = _compute_error_report(inferred_targets, case["targets"])
+        heuristic_report = _compute_error_report(
+            _extract_predicted_values(heuristic_measurements, target_measurement_names),
+            case["targets"],
+        )
+        auto_report = _compute_error_report(
+            _extract_predicted_values(auto_measurements, target_measurement_names),
+            case["targets"],
+        )
+        exact_report = _compute_error_report(
+            _extract_predicted_values(exact_measurements, target_measurement_names),
+            case["targets"],
+        )
 
         case_results.append(
             {
@@ -279,14 +410,19 @@ def main() -> None:
                 "height_cm": case["height_cm"],
                 "weight_kg": case["weight_kg"],
                 "body_type": case["body_type"],
+                "target_sources": inferred_sources,
+                "inferred_targets": inferred_targets,
+                "inference": inference_report,
                 "heuristic": heuristic_report,
-                "optimized": optimized_report,
+                "auto": auto_report,
+                "exact": exact_report,
             }
         )
 
     report = {
         "case_count": len(case_results),
         "summary": _summarize_cases(case_results),
+        "worst_auto_cases": _build_worst_cases(case_results),
         "cases": case_results,
     }
 
@@ -298,6 +434,8 @@ def main() -> None:
         json.dump(report, handle, ensure_ascii=True, indent=2)
 
     print(json.dumps(report["summary"], ensure_ascii=True, indent=2))
+    print("\nWorst auto-generation cases:")
+    print(json.dumps(report["worst_auto_cases"], ensure_ascii=True, indent=2))
     print(f"\nSaved full validation report to: {args.output}")
 
 

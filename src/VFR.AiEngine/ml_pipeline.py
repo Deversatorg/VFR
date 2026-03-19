@@ -23,7 +23,7 @@ except ImportError:
 
 from s3_client import upload_glb  # S3 upload helper
 from anthropometry import infer_measurement_targets
-from measurement_optimizer import calculate_measurements, optimize_smplx_betas
+from measurement_optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
 
 logger = logging.getLogger("AvatarML")
 
@@ -141,7 +141,7 @@ class AvatarMLPipeline:
         if arm_length > 0:
             proportion_bias += np.clip((arm_length / max(height_cm, 1.0)) - 0.37, -0.05, 0.05)
         if leg_length > 0:
-            proportion_bias += np.clip((leg_length / max(height_cm, 1.0)) - 0.48, -0.06, 0.06)
+            proportion_bias += np.clip((leg_length / max(height_cm, 1.0)) - 0.495, -0.06, 0.06)
         if proportion_bias != 0.0:
             betas[0, 1] += float(np.clip(proportion_bias, -0.08, 0.08))
 
@@ -179,7 +179,15 @@ class AvatarMLPipeline:
             logger.warning(f"Failed to extract skin color: {e}")
             return None
 
-    def _generate_smplx_glb(self, betas: Any, output_path: str, gender: str = 'neutral', target_height_m: float = 1.70, skin_color: Optional[Tuple[float, float, float]] = None) -> str:
+    def _generate_smplx_glb(
+        self,
+        betas: Any,
+        output_path: str,
+        gender: str = 'neutral',
+        target_height_m: float = 1.70,
+        skin_color: Optional[Tuple[float, float, float]] = None,
+        target_measurements: Optional[dict[str, float]] = None,
+    ) -> str:
         """
         Runs the SMPL-X forward pass, exports the mesh as GLB, uploads to S3.
         Returns the public S3 URL (or local path when S3 is unavailable).
@@ -199,7 +207,18 @@ class AvatarMLPipeline:
         with torch.no_grad():
             output = smpl_model(betas=betas, return_verts=True)
 
-        verts = output.vertices[0].detach().cpu().numpy()   # (N, 3)
+        warped_vertices, warped_joints, warp_scales = apply_proportion_warp(
+            vertices=output.vertices,
+            joints=output.joints,
+            parents=smpl_model.parents,
+            weights=smpl_model.lbs_weights,
+            target_measurements=target_measurements,
+            target_height_cm=target_height_m * 100.0,
+        )
+        if warp_scales:
+            logger.info("Applied post-generation limb warp: %s", warp_scales)
+
+        verts = warped_vertices.detach().cpu().numpy()   # (N, 3)
         faces = smpl_model.faces                            # (F, 3)
 
         # Scale mesh to precise target height
@@ -221,7 +240,10 @@ class AvatarMLPipeline:
         mesh.apply_translation([0, -min_y, 0])
 
         # Get rigging data
-        joints = output.joints[0].detach().cpu().numpy() * scale
+        if warped_joints is not None:
+            joints = warped_joints.detach().cpu().numpy() * scale
+        else:
+            joints = output.joints[0].detach().cpu().numpy() * scale
         # Apply same transformations to joints
         joints = (np.hstack([joints, np.ones((joints.shape[0], 1))]) @ matrix.T)[:, :3]
         joints[:, 1] -= min_y
@@ -465,8 +487,17 @@ class AvatarMLPipeline:
             )
 
             heuristic_betas = self._simulate_profile_betas(
-                height_cm, weight_kg, body_type,
-                chest, waist, hip, shoulder, calf, arm_length, torso_length, leg_length
+                height_cm,
+                weight_kg,
+                body_type,
+                target_measurements.get("chest_cm", 0.0),
+                target_measurements.get("waist_cm", 0.0),
+                target_measurements.get("hips_cm", 0.0),
+                shoulder,
+                calf,
+                target_measurements.get("arm_length_cm", 0.0),
+                torso_length,
+                target_measurements.get("leg_length_cm", 0.0),
             )
 
             logger.info(
@@ -475,6 +506,17 @@ class AvatarMLPipeline:
                 measurement_sources,
                 measurement_weights,
             )
+
+            optimization_targets = {
+                measurement_name: target_value
+                for measurement_name, target_value in target_measurements.items()
+                if measurement_name in {"chest_cm", "waist_cm", "hips_cm"}
+            }
+            optimization_weights = {
+                measurement_name: measurement_weights[measurement_name]
+                for measurement_name in optimization_targets
+                if measurement_name in measurement_weights
+            }
 
             approximate_hint_fields = []
             if shoulder > 0:
@@ -490,15 +532,15 @@ class AvatarMLPipeline:
                 )
 
             try:
-                optimizer_iterations = 140 if user_measurement_overrides else 90
+                optimizer_iterations = 180 if user_measurement_overrides else 120
                 optimized_betas = optimize_smplx_betas(
-                    target_measurements=target_measurements,
+                    target_measurements=optimization_targets,
                     smplx_model_path=self.model_path,
                     gender=gender,
                     num_iterations=optimizer_iterations,
                     target_height_cm=height_cm,
                     initial_betas=heuristic_betas.detach().cpu().numpy(),
-                    measurement_weights=measurement_weights,
+                    measurement_weights=optimization_weights,
                     device=str(self.device)
                 )
                 betas = torch.tensor(optimized_betas, dtype=torch.float32, device=self.device)
@@ -507,9 +549,17 @@ class AvatarMLPipeline:
                 if smpl_model is not None:
                     with torch.no_grad():
                         debug_output = smpl_model(betas=betas, return_verts=True)
-                    measured = calculate_measurements(
+                    debug_vertices, debug_joints, warp_scales = apply_proportion_warp(
                         vertices=debug_output.vertices,
                         joints=debug_output.joints,
+                        parents=smpl_model.parents,
+                        weights=smpl_model.lbs_weights,
+                        target_measurements=target_measurements,
+                        target_height_cm=height_cm,
+                    )
+                    measured = calculate_measurements(
+                        vertices=debug_vertices,
+                        joints=debug_joints,
                         target_height_cm=height_cm,
                     )
                     measured_summary = {
@@ -525,6 +575,8 @@ class AvatarMLPipeline:
                             float(measured["height_cm"].detach().cpu().item()),
                             2,
                         )
+                    if warp_scales:
+                        logger.info("Applied debug proportion warp: %s", warp_scales)
                     logger.info(
                         "Post-optimization height-normalized measurements: %s",
                         measured_summary,
@@ -551,7 +603,14 @@ class AvatarMLPipeline:
             if smpl_model is not None:
                 logger.info(f"Using real SMPL-X pipeline (gender={gender})...")
                 target_height_m = height_cm / 100.0
-                public_url = self._generate_smplx_glb(betas, tmp_path, gender=gender, target_height_m=target_height_m, skin_color=skin_color)
+                public_url = self._generate_smplx_glb(
+                    betas,
+                    tmp_path,
+                    gender=gender,
+                    target_height_m=target_height_m,
+                    skin_color=skin_color,
+                    target_measurements=target_measurements,
+                )
             else:
                 raise RuntimeError(f"SMPL-X unavailable for gender='{gender}' and neutral fallback also failed.")
 

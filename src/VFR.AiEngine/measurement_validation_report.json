@@ -1,0 +1,1877 @@
+{
+  "case_count": 12,
+  "summary": {
+    "chest_cm": {
+      "inference_mae": 1.4017,
+      "heuristic_mae": 20.7034,
+      "auto_mae": 3.951,
+      "exact_mae": 3.8872,
+      "inference_max_abs_error": 2.55,
+      "heuristic_max_abs_error": 34.1174,
+      "auto_max_abs_error": 7.4349,
+      "exact_max_abs_error": 5.5481
+    },
+    "waist_cm": {
+      "inference_mae": 2.01,
+      "heuristic_mae": 18.9277,
+      "auto_mae": 2.485,
+      "exact_mae": 1.5322,
+      "inference_max_abs_error": 3.31,
+      "heuristic_max_abs_error": 33.3442,
+      "auto_max_abs_error": 4.6321,
+      "exact_max_abs_error": 3.2469
+    },
+    "hips_cm": {
+      "inference_mae": 1.5725,
+      "heuristic_mae": 15.7834,
+      "auto_mae": 2.5441,
+      "exact_mae": 2.6077,
+      "inference_max_abs_error": 4.24,
+      "heuristic_max_abs_error": 28.7957,
+      "auto_max_abs_error": 6.5851,
+      "exact_max_abs_error": 6.2404
+    },
+    "arm_length_cm": {
+      "inference_mae": 0.3042,
+      "heuristic_mae": 0.3042,
+      "auto_mae": 0.3042,
+      "exact_mae": 0.0,
+      "inference_max_abs_error": 0.71,
+      "heuristic_max_abs_error": 0.71,
+      "auto_max_abs_error": 0.71,
+      "exact_max_abs_error": 0.0
+    },
+    "leg_length_cm": {
+      "inference_mae": 1.1342,
+      "heuristic_mae": 1.8884,
+      "auto_mae": 2.0417,
+      "exact_mae": 1.7843,
+      "inference_max_abs_error": 2.27,
+      "heuristic_max_abs_error": 3.8422,
+      "auto_max_abs_error": 4.0078,
+      "exact_max_abs_error": 2.5431
+    }
+  },
+  "worst_auto_cases": [
+    {
+      "name": "female_athletic_medium",
+      "auto_mean_abs_error": 3.373,
+      "exact_mean_abs_error": 1.9608,
+      "inference_mean_abs_error": 2.084
+    },
+    {
+      "name": "female_tall_slim",
+      "auto_mean_abs_error": 3.2468,
+      "exact_mean_abs_error": 1.8648,
+      "inference_mean_abs_error": 1.6
+    },
+    {
+      "name": "male_tall_slim_athletic",
+      "auto_mean_abs_error": 3.0948,
+      "exact_mean_abs_error": 2.452,
+      "inference_mean_abs_error": 1.348
+    },
+    {
+      "name": "female_curvy_medium",
+      "auto_mean_abs_error": 2.486,
+      "exact_mean_abs_error": 1.9544,
+      "inference_mean_abs_error": 1.096
+    },
+    {
+      "name": "male_average_regular",
+      "auto_mean_abs_error": 2.3042,
+      "exact_mean_abs_error": 2.06,
+      "inference_mean_abs_error": 0.898
+    }
+  ],
+  "cases": [
+    {
+      "name": "male_tall_slim_athletic",
+      "gender": "male",
+      "height_cm": 190.0,
+      "weight_kg": 65.0,
+      "body_type": "athletic",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 97.45,
+        "waist_cm": 74.32,
+        "hips_cm": 92.58,
+        "arm_length_cm": 71.06,
+        "leg_length_cm": 96.03
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 95.0,
+          "predicted": 97.45,
+          "abs_error": 2.45,
+          "rel_error": 0.025789
+        },
+        "waist_cm": {
+          "target": 76.0,
+          "predicted": 74.32,
+          "abs_error": 1.68,
+          "rel_error": 0.022105
+        },
+        "hips_cm": {
+          "target": 92.0,
+          "predicted": 92.58,
+          "abs_error": 0.58,
+          "rel_error": 0.006304
+        },
+        "arm_length_cm": {
+          "target": 71.0,
+          "predicted": 71.06,
+          "abs_error": 0.06,
+          "rel_error": 0.000845
+        },
+        "leg_length_cm": {
+          "target": 98.0,
+          "predicted": 96.03,
+          "abs_error": 1.97,
+          "rel_error": 0.020102
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 95.0,
+          "predicted": 126.5524,
+          "abs_error": 31.5524,
+          "rel_error": 0.33213
+        },
+        "waist_cm": {
+          "target": 76.0,
+          "predicted": 109.3442,
+          "abs_error": 33.3442,
+          "rel_error": 0.43874
+        },
+        "hips_cm": {
+          "target": 92.0,
+          "predicted": 120.7957,
+          "abs_error": 28.7957,
+          "rel_error": 0.312997
+        },
+        "arm_length_cm": {
+          "target": 71.0,
+          "predicted": 71.06,
+          "abs_error": 0.06,
+          "rel_error": 0.000845
+        },
+        "leg_length_cm": {
+          "target": 98.0,
+          "predicted": 97.3304,
+          "abs_error": 0.6696,
+          "rel_error": 0.006833
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 95.0,
+          "predicted": 102.4349,
+          "abs_error": 7.4349,
+          "rel_error": 0.078262
+        },
+        "waist_cm": {
+          "target": 76.0,
+          "predicted": 74.7223,
+          "abs_error": 1.2777,
+          "rel_error": 0.016812
+        },
+        "hips_cm": {
+          "target": 92.0,
+          "predicted": 98.5851,
+          "abs_error": 6.5851,
+          "rel_error": 0.071577
+        },
+        "arm_length_cm": {
+          "target": 71.0,
+          "predicted": 71.06,
+          "abs_error": 0.06,
+          "rel_error": 0.000845
+        },
+        "leg_length_cm": {
+          "target": 98.0,
+          "predicted": 97.8838,
+          "abs_error": 0.1162,
+          "rel_error": 0.001186
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 95.0,
+          "predicted": 98.6082,
+          "abs_error": 3.6082,
+          "rel_error": 0.037982
+        },
+        "waist_cm": {
+          "target": 76.0,
+          "predicted": 74.5771,
+          "abs_error": 1.4229,
+          "rel_error": 0.018722
+        },
+        "hips_cm": {
+          "target": 92.0,
+          "predicted": 98.2404,
+          "abs_error": 6.2404,
+          "rel_error": 0.06783
+        },
+        "arm_length_cm": {
+          "target": 71.0,
+          "predicted": 71.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 98.0,
+          "predicted": 98.9885,
+          "abs_error": 0.9885,
+          "rel_error": 0.010087
+        }
+      }
+    },
+    {
+      "name": "male_average_regular",
+      "gender": "male",
+      "height_cm": 178.0,
+      "weight_kg": 76.0,
+      "body_type": "regular",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 99.63,
+        "waist_cm": 82.11,
+        "hips_cm": 96.32,
+        "arm_length_cm": 66.57,
+        "leg_length_cm": 89.14
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 99.0,
+          "predicted": 99.63,
+          "abs_error": 0.63,
+          "rel_error": 0.006364
+        },
+        "waist_cm": {
+          "target": 84.0,
+          "predicted": 82.11,
+          "abs_error": 1.89,
+          "rel_error": 0.0225
+        },
+        "hips_cm": {
+          "target": 97.0,
+          "predicted": 96.32,
+          "abs_error": 0.68,
+          "rel_error": 0.00701
+        },
+        "arm_length_cm": {
+          "target": 67.0,
+          "predicted": 66.57,
+          "abs_error": 0.43,
+          "rel_error": 0.006418
+        },
+        "leg_length_cm": {
+          "target": 90.0,
+          "predicted": 89.14,
+          "abs_error": 0.86,
+          "rel_error": 0.009556
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 99.0,
+          "predicted": 119.7734,
+          "abs_error": 20.7734,
+          "rel_error": 0.209832
+        },
+        "waist_cm": {
+          "target": 84.0,
+          "predicted": 100.383,
+          "abs_error": 16.383,
+          "rel_error": 0.195036
+        },
+        "hips_cm": {
+          "target": 97.0,
+          "predicted": 113.9705,
+          "abs_error": 16.9705,
+          "rel_error": 0.174954
+        },
+        "arm_length_cm": {
+          "target": 67.0,
+          "predicted": 66.57,
+          "abs_error": 0.43,
+          "rel_error": 0.006418
+        },
+        "leg_length_cm": {
+          "target": 90.0,
+          "predicted": 90.3162,
+          "abs_error": 0.3162,
+          "rel_error": 0.003513
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 99.0,
+          "predicted": 104.2258,
+          "abs_error": 5.2258,
+          "rel_error": 0.052786
+        },
+        "waist_cm": {
+          "target": 84.0,
+          "predicted": 82.8025,
+          "abs_error": 1.1975,
+          "rel_error": 0.014256
+        },
+        "hips_cm": {
+          "target": 97.0,
+          "predicted": 100.7284,
+          "abs_error": 3.7284,
+          "rel_error": 0.038438
+        },
+        "arm_length_cm": {
+          "target": 67.0,
+          "predicted": 66.57,
+          "abs_error": 0.43,
+          "rel_error": 0.006418
+        },
+        "leg_length_cm": {
+          "target": 90.0,
+          "predicted": 90.9395,
+          "abs_error": 0.9395,
+          "rel_error": 0.010439
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 99.0,
+          "predicted": 102.9939,
+          "abs_error": 3.9939,
+          "rel_error": 0.040343
+        },
+        "waist_cm": {
+          "target": 84.0,
+          "predicted": 83.3255,
+          "abs_error": 0.6745,
+          "rel_error": 0.008029
+        },
+        "hips_cm": {
+          "target": 97.0,
+          "predicted": 101.3299,
+          "abs_error": 4.3299,
+          "rel_error": 0.044638
+        },
+        "arm_length_cm": {
+          "target": 67.0,
+          "predicted": 67.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 90.0,
+          "predicted": 91.3019,
+          "abs_error": 1.3019,
+          "rel_error": 0.014466
+        }
+      }
+    },
+    {
+      "name": "male_athletic_medium",
+      "gender": "male",
+      "height_cm": 182.0,
+      "weight_kg": 82.0,
+      "body_type": "athletic",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 106.17,
+        "waist_cm": 83.32,
+        "hips_cm": 99.52,
+        "arm_length_cm": 68.07,
+        "leg_length_cm": 91.44
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 106.0,
+          "predicted": 106.17,
+          "abs_error": 0.17,
+          "rel_error": 0.001604
+        },
+        "waist_cm": {
+          "target": 82.0,
+          "predicted": 83.32,
+          "abs_error": 1.32,
+          "rel_error": 0.016098
+        },
+        "hips_cm": {
+          "target": 99.0,
+          "predicted": 99.52,
+          "abs_error": 0.52,
+          "rel_error": 0.005253
+        },
+        "arm_length_cm": {
+          "target": 68.0,
+          "predicted": 68.07,
+          "abs_error": 0.07,
+          "rel_error": 0.001029
+        },
+        "leg_length_cm": {
+          "target": 92.0,
+          "predicted": 91.44,
+          "abs_error": 0.56,
+          "rel_error": 0.006087
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 106.0,
+          "predicted": 122.9695,
+          "abs_error": 16.9695,
+          "rel_error": 0.16009
+        },
+        "waist_cm": {
+          "target": 82.0,
+          "predicted": 103.5342,
+          "abs_error": 21.5342,
+          "rel_error": 0.262612
+        },
+        "hips_cm": {
+          "target": 99.0,
+          "predicted": 116.9172,
+          "abs_error": 17.9172,
+          "rel_error": 0.180981
+        },
+        "arm_length_cm": {
+          "target": 68.0,
+          "predicted": 68.07,
+          "abs_error": 0.07,
+          "rel_error": 0.00103
+        },
+        "leg_length_cm": {
+          "target": 92.0,
+          "predicted": 92.5687,
+          "abs_error": 0.5687,
+          "rel_error": 0.006181
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 106.0,
+          "predicted": 108.5676,
+          "abs_error": 2.5676,
+          "rel_error": 0.024222
+        },
+        "waist_cm": {
+          "target": 82.0,
+          "predicted": 84.1294,
+          "abs_error": 2.1294,
+          "rel_error": 0.025969
+        },
+        "hips_cm": {
+          "target": 99.0,
+          "predicted": 103.2964,
+          "abs_error": 4.2964,
+          "rel_error": 0.043398
+        },
+        "arm_length_cm": {
+          "target": 68.0,
+          "predicted": 68.07,
+          "abs_error": 0.07,
+          "rel_error": 0.001029
+        },
+        "leg_length_cm": {
+          "target": 92.0,
+          "predicted": 93.0148,
+          "abs_error": 1.0148,
+          "rel_error": 0.011031
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 106.0,
+          "predicted": 107.7299,
+          "abs_error": 1.7299,
+          "rel_error": 0.016319
+        },
+        "waist_cm": {
+          "target": 82.0,
+          "predicted": 82.7924,
+          "abs_error": 0.7924,
+          "rel_error": 0.009663
+        },
+        "hips_cm": {
+          "target": 99.0,
+          "predicted": 102.6296,
+          "abs_error": 3.6296,
+          "rel_error": 0.036663
+        },
+        "arm_length_cm": {
+          "target": 68.0,
+          "predicted": 68.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 92.0,
+          "predicted": 93.4374,
+          "abs_error": 1.4374,
+          "rel_error": 0.015624
+        }
+      }
+    },
+    {
+      "name": "male_short_slim",
+      "gender": "male",
+      "height_cm": 165.0,
+      "weight_kg": 56.0,
+      "body_type": "slim",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 87.15,
+        "waist_cm": 69.69,
+        "hips_cm": 84.55,
+        "arm_length_cm": 61.71,
+        "leg_length_cm": 83.66
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 89.0,
+          "predicted": 87.15,
+          "abs_error": 1.85,
+          "rel_error": 0.020787
+        },
+        "waist_cm": {
+          "target": 73.0,
+          "predicted": 69.69,
+          "abs_error": 3.31,
+          "rel_error": 0.045342
+        },
+        "hips_cm": {
+          "target": 88.0,
+          "predicted": 84.55,
+          "abs_error": 3.45,
+          "rel_error": 0.039205
+        },
+        "arm_length_cm": {
+          "target": 61.0,
+          "predicted": 61.71,
+          "abs_error": 0.71,
+          "rel_error": 0.011639
+        },
+        "leg_length_cm": {
+          "target": 82.0,
+          "predicted": 83.66,
+          "abs_error": 1.66,
+          "rel_error": 0.020244
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 89.0,
+          "predicted": 108.6684,
+          "abs_error": 19.6684,
+          "rel_error": 0.220994
+        },
+        "waist_cm": {
+          "target": 73.0,
+          "predicted": 92.2287,
+          "abs_error": 19.2287,
+          "rel_error": 0.263407
+        },
+        "hips_cm": {
+          "target": 88.0,
+          "predicted": 103.9609,
+          "abs_error": 15.9609,
+          "rel_error": 0.181374
+        },
+        "arm_length_cm": {
+          "target": 61.0,
+          "predicted": 61.71,
+          "abs_error": 0.71,
+          "rel_error": 0.011639
+        },
+        "leg_length_cm": {
+          "target": 82.0,
+          "predicted": 84.614,
+          "abs_error": 2.614,
+          "rel_error": 0.031878
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 89.0,
+          "predicted": 91.6332,
+          "abs_error": 2.6332,
+          "rel_error": 0.029586
+        },
+        "waist_cm": {
+          "target": 73.0,
+          "predicted": 69.8365,
+          "abs_error": 3.1635,
+          "rel_error": 0.043336
+        },
+        "hips_cm": {
+          "target": 88.0,
+          "predicted": 88.9736,
+          "abs_error": 0.9736,
+          "rel_error": 0.011064
+        },
+        "arm_length_cm": {
+          "target": 61.0,
+          "predicted": 61.71,
+          "abs_error": 0.71,
+          "rel_error": 0.011639
+        },
+        "leg_length_cm": {
+          "target": 82.0,
+          "predicted": 85.115,
+          "abs_error": 3.115,
+          "rel_error": 0.037988
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 89.0,
+          "predicted": 94.5481,
+          "abs_error": 5.5481,
+          "rel_error": 0.062339
+        },
+        "waist_cm": {
+          "target": 73.0,
+          "predicted": 73.7433,
+          "abs_error": 0.7433,
+          "rel_error": 0.010183
+        },
+        "hips_cm": {
+          "target": 88.0,
+          "predicted": 91.4512,
+          "abs_error": 3.4512,
+          "rel_error": 0.039218
+        },
+        "arm_length_cm": {
+          "target": 61.0,
+          "predicted": 61.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 82.0,
+          "predicted": 83.9031,
+          "abs_error": 1.9031,
+          "rel_error": 0.023209
+        }
+      }
+    },
+    {
+      "name": "male_stocky_regular",
+      "gender": "male",
+      "height_cm": 172.0,
+      "weight_kg": 88.0,
+      "body_type": "regular",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 105.64,
+        "waist_cm": 90.93,
+        "hips_cm": 101.78,
+        "arm_length_cm": 64.33,
+        "leg_length_cm": 86.26
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 108.0,
+          "predicted": 105.64,
+          "abs_error": 2.36,
+          "rel_error": 0.021852
+        },
+        "waist_cm": {
+          "target": 94.0,
+          "predicted": 90.93,
+          "abs_error": 3.07,
+          "rel_error": 0.03266
+        },
+        "hips_cm": {
+          "target": 104.0,
+          "predicted": 101.78,
+          "abs_error": 2.22,
+          "rel_error": 0.021346
+        },
+        "arm_length_cm": {
+          "target": 64.0,
+          "predicted": 64.33,
+          "abs_error": 0.33,
+          "rel_error": 0.005156
+        },
+        "leg_length_cm": {
+          "target": 86.0,
+          "predicted": 86.26,
+          "abs_error": 0.26,
+          "rel_error": 0.003023
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 108.0,
+          "predicted": 116.378,
+          "abs_error": 8.378,
+          "rel_error": 0.077574
+        },
+        "waist_cm": {
+          "target": 94.0,
+          "predicted": 96.0226,
+          "abs_error": 2.0226,
+          "rel_error": 0.021517
+        },
+        "hips_cm": {
+          "target": 104.0,
+          "predicted": 110.5602,
+          "abs_error": 6.5602,
+          "rel_error": 0.063078
+        },
+        "arm_length_cm": {
+          "target": 64.0,
+          "predicted": 64.33,
+          "abs_error": 0.33,
+          "rel_error": 0.005156
+        },
+        "leg_length_cm": {
+          "target": 86.0,
+          "predicted": 87.2113,
+          "abs_error": 1.2113,
+          "rel_error": 0.014085
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 108.0,
+          "predicted": 108.778,
+          "abs_error": 0.778,
+          "rel_error": 0.007204
+        },
+        "waist_cm": {
+          "target": 94.0,
+          "predicted": 91.2989,
+          "abs_error": 2.7011,
+          "rel_error": 0.028735
+        },
+        "hips_cm": {
+          "target": 104.0,
+          "predicted": 104.8703,
+          "abs_error": 0.8703,
+          "rel_error": 0.008368
+        },
+        "arm_length_cm": {
+          "target": 64.0,
+          "predicted": 64.33,
+          "abs_error": 0.33,
+          "rel_error": 0.005156
+        },
+        "leg_length_cm": {
+          "target": 86.0,
+          "predicted": 87.6212,
+          "abs_error": 1.6212,
+          "rel_error": 0.018851
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 108.0,
+          "predicted": 111.4937,
+          "abs_error": 3.4937,
+          "rel_error": 0.032349
+        },
+        "waist_cm": {
+          "target": 94.0,
+          "predicted": 94.9712,
+          "abs_error": 0.9712,
+          "rel_error": 0.010332
+        },
+        "hips_cm": {
+          "target": 104.0,
+          "predicted": 107.2179,
+          "abs_error": 3.2179,
+          "rel_error": 0.030941
+        },
+        "arm_length_cm": {
+          "target": 64.0,
+          "predicted": 64.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 86.0,
+          "predicted": 87.3676,
+          "abs_error": 1.3676,
+          "rel_error": 0.015902
+        }
+      }
+    },
+    {
+      "name": "male_tall_curvy_plus",
+      "gender": "male",
+      "height_cm": 180.0,
+      "weight_kg": 110.0,
+      "body_type": "curvy",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 118.24,
+        "waist_cm": 104.93,
+        "hips_cm": 114.06,
+        "arm_length_cm": 67.32,
+        "leg_length_cm": 89.73
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 118.0,
+          "predicted": 118.24,
+          "abs_error": 0.24,
+          "rel_error": 0.002034
+        },
+        "waist_cm": {
+          "target": 108.0,
+          "predicted": 104.93,
+          "abs_error": 3.07,
+          "rel_error": 0.028426
+        },
+        "hips_cm": {
+          "target": 114.0,
+          "predicted": 114.06,
+          "abs_error": 0.06,
+          "rel_error": 0.000526
+        },
+        "arm_length_cm": {
+          "target": 68.0,
+          "predicted": 67.32,
+          "abs_error": 0.68,
+          "rel_error": 0.01
+        },
+        "leg_length_cm": {
+          "target": 92.0,
+          "predicted": 89.73,
+          "abs_error": 2.27,
+          "rel_error": 0.024674
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 118.0,
+          "predicted": 123.2595,
+          "abs_error": 5.2595,
+          "rel_error": 0.044572
+        },
+        "waist_cm": {
+          "target": 108.0,
+          "predicted": 101.1307,
+          "abs_error": 6.8693,
+          "rel_error": 0.063604
+        },
+        "hips_cm": {
+          "target": 114.0,
+          "predicted": 116.7568,
+          "abs_error": 2.7568,
+          "rel_error": 0.024182
+        },
+        "arm_length_cm": {
+          "target": 68.0,
+          "predicted": 67.32,
+          "abs_error": 0.68,
+          "rel_error": 0.01
+        },
+        "leg_length_cm": {
+          "target": 92.0,
+          "predicted": 90.7913,
+          "abs_error": 1.2087,
+          "rel_error": 0.013138
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 118.0,
+          "predicted": 121.164,
+          "abs_error": 3.164,
+          "rel_error": 0.026814
+        },
+        "waist_cm": {
+          "target": 108.0,
+          "predicted": 104.8907,
+          "abs_error": 3.1093,
+          "rel_error": 0.02879
+        },
+        "hips_cm": {
+          "target": 114.0,
+          "predicted": 116.5718,
+          "abs_error": 2.5718,
+          "rel_error": 0.022559
+        },
+        "arm_length_cm": {
+          "target": 68.0,
+          "predicted": 67.32,
+          "abs_error": 0.68,
+          "rel_error": 0.01
+        },
+        "leg_length_cm": {
+          "target": 92.0,
+          "predicted": 90.931,
+          "abs_error": 1.069,
+          "rel_error": 0.011619
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 118.0,
+          "predicted": 121.0982,
+          "abs_error": 3.0982,
+          "rel_error": 0.026256
+        },
+        "waist_cm": {
+          "target": 108.0,
+          "predicted": 106.5851,
+          "abs_error": 1.4149,
+          "rel_error": 0.013101
+        },
+        "hips_cm": {
+          "target": 114.0,
+          "predicted": 116.1686,
+          "abs_error": 2.1686,
+          "rel_error": 0.019023
+        },
+        "arm_length_cm": {
+          "target": 68.0,
+          "predicted": 68.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 92.0,
+          "predicted": 92.7133,
+          "abs_error": 0.7133,
+          "rel_error": 0.007753
+        }
+      }
+    },
+    {
+      "name": "female_petite_slim",
+      "gender": "female",
+      "height_cm": 158.0,
+      "weight_kg": 49.0,
+      "body_type": "slim",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 82.22,
+        "waist_cm": 63.29,
+        "hips_cm": 87.99,
+        "arm_length_cm": 58.14,
+        "leg_length_cm": 77.56
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 84.0,
+          "predicted": 82.22,
+          "abs_error": 1.78,
+          "rel_error": 0.02119
+        },
+        "waist_cm": {
+          "target": 64.0,
+          "predicted": 63.29,
+          "abs_error": 0.71,
+          "rel_error": 0.011094
+        },
+        "hips_cm": {
+          "target": 90.0,
+          "predicted": 87.99,
+          "abs_error": 2.01,
+          "rel_error": 0.022333
+        },
+        "arm_length_cm": {
+          "target": 58.0,
+          "predicted": 58.14,
+          "abs_error": 0.14,
+          "rel_error": 0.002414
+        },
+        "leg_length_cm": {
+          "target": 76.0,
+          "predicted": 77.56,
+          "abs_error": 1.56,
+          "rel_error": 0.020526
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 84.0,
+          "predicted": 107.715,
+          "abs_error": 23.715,
+          "rel_error": 0.282321
+        },
+        "waist_cm": {
+          "target": 64.0,
+          "predicted": 85.4074,
+          "abs_error": 21.4074,
+          "rel_error": 0.334491
+        },
+        "hips_cm": {
+          "target": 90.0,
+          "predicted": 106.5433,
+          "abs_error": 16.5433,
+          "rel_error": 0.183814
+        },
+        "arm_length_cm": {
+          "target": 58.0,
+          "predicted": 58.14,
+          "abs_error": 0.14,
+          "rel_error": 0.002413
+        },
+        "leg_length_cm": {
+          "target": 76.0,
+          "predicted": 79.2227,
+          "abs_error": 3.2227,
+          "rel_error": 0.042404
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 84.0,
+          "predicted": 85.9081,
+          "abs_error": 1.9081,
+          "rel_error": 0.022715
+        },
+        "waist_cm": {
+          "target": 64.0,
+          "predicted": 65.0328,
+          "abs_error": 1.0328,
+          "rel_error": 0.016138
+        },
+        "hips_cm": {
+          "target": 90.0,
+          "predicted": 88.7432,
+          "abs_error": 1.2568,
+          "rel_error": 0.013965
+        },
+        "arm_length_cm": {
+          "target": 58.0,
+          "predicted": 58.14,
+          "abs_error": 0.14,
+          "rel_error": 0.002414
+        },
+        "leg_length_cm": {
+          "target": 76.0,
+          "predicted": 79.3641,
+          "abs_error": 3.3641,
+          "rel_error": 0.044265
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 84.0,
+          "predicted": 87.9008,
+          "abs_error": 3.9008,
+          "rel_error": 0.046439
+        },
+        "waist_cm": {
+          "target": 64.0,
+          "predicted": 66.6755,
+          "abs_error": 2.6755,
+          "rel_error": 0.041805
+        },
+        "hips_cm": {
+          "target": 90.0,
+          "predicted": 91.2574,
+          "abs_error": 1.2574,
+          "rel_error": 0.013971
+        },
+        "arm_length_cm": {
+          "target": 58.0,
+          "predicted": 58.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 76.0,
+          "predicted": 78.5431,
+          "abs_error": 2.5431,
+          "rel_error": 0.033462
+        }
+      }
+    },
+    {
+      "name": "female_average_regular",
+      "gender": "female",
+      "height_cm": 166.0,
+      "weight_kg": 60.0,
+      "body_type": "regular",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 89.12,
+        "waist_cm": 71.27,
+        "hips_cm": 96.94,
+        "arm_length_cm": 61.09,
+        "leg_length_cm": 82.07
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 90.0,
+          "predicted": 89.12,
+          "abs_error": 0.88,
+          "rel_error": 0.009778
+        },
+        "waist_cm": {
+          "target": 72.0,
+          "predicted": 71.27,
+          "abs_error": 0.73,
+          "rel_error": 0.010139
+        },
+        "hips_cm": {
+          "target": 97.0,
+          "predicted": 96.94,
+          "abs_error": 0.06,
+          "rel_error": 0.000619
+        },
+        "arm_length_cm": {
+          "target": 61.0,
+          "predicted": 61.09,
+          "abs_error": 0.09,
+          "rel_error": 0.001475
+        },
+        "leg_length_cm": {
+          "target": 80.0,
+          "predicted": 82.07,
+          "abs_error": 2.07,
+          "rel_error": 0.025875
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 90.0,
+          "predicted": 113.4769,
+          "abs_error": 23.4769,
+          "rel_error": 0.260855
+        },
+        "waist_cm": {
+          "target": 72.0,
+          "predicted": 90.9626,
+          "abs_error": 18.9626,
+          "rel_error": 0.26337
+        },
+        "hips_cm": {
+          "target": 97.0,
+          "predicted": 112.5074,
+          "abs_error": 15.5074,
+          "rel_error": 0.159871
+        },
+        "arm_length_cm": {
+          "target": 61.0,
+          "predicted": 61.09,
+          "abs_error": 0.09,
+          "rel_error": 0.001475
+        },
+        "leg_length_cm": {
+          "target": 80.0,
+          "predicted": 83.8422,
+          "abs_error": 3.8422,
+          "rel_error": 0.048027
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 90.0,
+          "predicted": 93.5654,
+          "abs_error": 3.5654,
+          "rel_error": 0.039616
+        },
+        "waist_cm": {
+          "target": 72.0,
+          "predicted": 72.9107,
+          "abs_error": 0.9107,
+          "rel_error": 0.012649
+        },
+        "hips_cm": {
+          "target": 97.0,
+          "predicted": 97.8704,
+          "abs_error": 0.8704,
+          "rel_error": 0.008973
+        },
+        "arm_length_cm": {
+          "target": 61.0,
+          "predicted": 61.09,
+          "abs_error": 0.09,
+          "rel_error": 0.001475
+        },
+        "leg_length_cm": {
+          "target": 80.0,
+          "predicted": 84.0078,
+          "abs_error": 4.0078,
+          "rel_error": 0.050097
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 90.0,
+          "predicted": 95.2589,
+          "abs_error": 5.2589,
+          "rel_error": 0.058432
+        },
+        "waist_cm": {
+          "target": 72.0,
+          "predicted": 74.3105,
+          "abs_error": 2.3105,
+          "rel_error": 0.03209
+        },
+        "hips_cm": {
+          "target": 97.0,
+          "predicted": 99.1676,
+          "abs_error": 2.1676,
+          "rel_error": 0.022347
+        },
+        "arm_length_cm": {
+          "target": 61.0,
+          "predicted": 61.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 80.0,
+          "predicted": 82.5079,
+          "abs_error": 2.5079,
+          "rel_error": 0.031349
+        }
+      }
+    },
+    {
+      "name": "female_athletic_medium",
+      "gender": "female",
+      "height_cm": 170.0,
+      "weight_kg": 63.0,
+      "body_type": "athletic",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 93.55,
+        "waist_cm": 70.87,
+        "hips_cm": 100.24,
+        "arm_length_cm": 62.56,
+        "leg_length_cm": 84.32
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 91.0,
+          "predicted": 93.55,
+          "abs_error": 2.55,
+          "rel_error": 0.028022
+        },
+        "waist_cm": {
+          "target": 69.0,
+          "predicted": 70.87,
+          "abs_error": 1.87,
+          "rel_error": 0.027101
+        },
+        "hips_cm": {
+          "target": 96.0,
+          "predicted": 100.24,
+          "abs_error": 4.24,
+          "rel_error": 0.044167
+        },
+        "arm_length_cm": {
+          "target": 63.0,
+          "predicted": 62.56,
+          "abs_error": 0.44,
+          "rel_error": 0.006984
+        },
+        "leg_length_cm": {
+          "target": 83.0,
+          "predicted": 84.32,
+          "abs_error": 1.32,
+          "rel_error": 0.015904
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 91.0,
+          "predicted": 117.0891,
+          "abs_error": 26.0891,
+          "rel_error": 0.286693
+        },
+        "waist_cm": {
+          "target": 69.0,
+          "predicted": 93.7792,
+          "abs_error": 24.7792,
+          "rel_error": 0.359119
+        },
+        "hips_cm": {
+          "target": 96.0,
+          "predicted": 115.9409,
+          "abs_error": 19.9409,
+          "rel_error": 0.207718
+        },
+        "arm_length_cm": {
+          "target": 63.0,
+          "predicted": 62.56,
+          "abs_error": 0.44,
+          "rel_error": 0.006985
+        },
+        "leg_length_cm": {
+          "target": 83.0,
+          "predicted": 85.9847,
+          "abs_error": 2.9847,
+          "rel_error": 0.03596
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 91.0,
+          "predicted": 96.1758,
+          "abs_error": 5.1758,
+          "rel_error": 0.056877
+        },
+        "waist_cm": {
+          "target": 69.0,
+          "predicted": 73.6321,
+          "abs_error": 4.6321,
+          "rel_error": 0.067133
+        },
+        "hips_cm": {
+          "target": 96.0,
+          "predicted": 99.5766,
+          "abs_error": 3.5766,
+          "rel_error": 0.037257
+        },
+        "arm_length_cm": {
+          "target": 63.0,
+          "predicted": 62.56,
+          "abs_error": 0.44,
+          "rel_error": 0.006984
+        },
+        "leg_length_cm": {
+          "target": 83.0,
+          "predicted": 86.0405,
+          "abs_error": 3.0405,
+          "rel_error": 0.036633
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 91.0,
+          "predicted": 94.5359,
+          "abs_error": 3.5359,
+          "rel_error": 0.038856
+        },
+        "waist_cm": {
+          "target": 69.0,
+          "predicted": 71.5279,
+          "abs_error": 2.5279,
+          "rel_error": 0.036636
+        },
+        "hips_cm": {
+          "target": 96.0,
+          "predicted": 97.3125,
+          "abs_error": 1.3125,
+          "rel_error": 0.013672
+        },
+        "arm_length_cm": {
+          "target": 63.0,
+          "predicted": 63.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 83.0,
+          "predicted": 85.4276,
+          "abs_error": 2.4276,
+          "rel_error": 0.029248
+        }
+      }
+    },
+    {
+      "name": "female_curvy_medium",
+      "gender": "female",
+      "height_cm": 168.0,
+      "weight_kg": 72.0,
+      "body_type": "curvy",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 96.8,
+        "waist_cm": 79.99,
+        "hips_cm": 109.46,
+        "arm_length_cm": 61.82,
+        "leg_length_cm": 82.65
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 98.0,
+          "predicted": 96.8,
+          "abs_error": 1.2,
+          "rel_error": 0.012245
+        },
+        "waist_cm": {
+          "target": 78.0,
+          "predicted": 79.99,
+          "abs_error": 1.99,
+          "rel_error": 0.025513
+        },
+        "hips_cm": {
+          "target": 108.0,
+          "predicted": 109.46,
+          "abs_error": 1.46,
+          "rel_error": 0.013519
+        },
+        "arm_length_cm": {
+          "target": 62.0,
+          "predicted": 61.82,
+          "abs_error": 0.18,
+          "rel_error": 0.002903
+        },
+        "leg_length_cm": {
+          "target": 82.0,
+          "predicted": 82.65,
+          "abs_error": 0.65,
+          "rel_error": 0.007927
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 98.0,
+          "predicted": 114.8661,
+          "abs_error": 16.8661,
+          "rel_error": 0.172103
+        },
+        "waist_cm": {
+          "target": 78.0,
+          "predicted": 93.4631,
+          "abs_error": 15.4631,
+          "rel_error": 0.198245
+        },
+        "hips_cm": {
+          "target": 108.0,
+          "predicted": 114.2468,
+          "abs_error": 6.2468,
+          "rel_error": 0.057841
+        },
+        "arm_length_cm": {
+          "target": 62.0,
+          "predicted": 61.82,
+          "abs_error": 0.18,
+          "rel_error": 0.002903
+        },
+        "leg_length_cm": {
+          "target": 82.0,
+          "predicted": 84.8733,
+          "abs_error": 2.8733,
+          "rel_error": 0.03504
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 98.0,
+          "predicted": 102.2007,
+          "abs_error": 4.2007,
+          "rel_error": 0.042865
+        },
+        "waist_cm": {
+          "target": 78.0,
+          "predicted": 82.4089,
+          "abs_error": 4.4089,
+          "rel_error": 0.056525
+        },
+        "hips_cm": {
+          "target": 108.0,
+          "predicted": 108.7194,
+          "abs_error": 0.7194,
+          "rel_error": 0.006661
+        },
+        "arm_length_cm": {
+          "target": 62.0,
+          "predicted": 61.82,
+          "abs_error": 0.18,
+          "rel_error": 0.002903
+        },
+        "leg_length_cm": {
+          "target": 82.0,
+          "predicted": 84.921,
+          "abs_error": 2.921,
+          "rel_error": 0.035622
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 98.0,
+          "predicted": 101.6282,
+          "abs_error": 3.6282,
+          "rel_error": 0.037022
+        },
+        "waist_cm": {
+          "target": 78.0,
+          "predicted": 81.2469,
+          "abs_error": 3.2469,
+          "rel_error": 0.041627
+        },
+        "hips_cm": {
+          "target": 108.0,
+          "predicted": 107.51,
+          "abs_error": 0.49,
+          "rel_error": 0.004537
+        },
+        "arm_length_cm": {
+          "target": 62.0,
+          "predicted": 62.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 82.0,
+          "predicted": 84.4071,
+          "abs_error": 2.4071,
+          "rel_error": 0.029355
+        }
+      }
+    },
+    {
+      "name": "female_tall_slim",
+      "gender": "female",
+      "height_cm": 178.0,
+      "weight_kg": 60.0,
+      "body_type": "slim",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 91.29,
+        "waist_cm": 70.29,
+        "hips_cm": 97.66,
+        "arm_length_cm": 65.5,
+        "leg_length_cm": 87.74
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 89.0,
+          "predicted": 91.29,
+          "abs_error": 2.29,
+          "rel_error": 0.02573
+        },
+        "waist_cm": {
+          "target": 68.0,
+          "predicted": 70.29,
+          "abs_error": 2.29,
+          "rel_error": 0.033676
+        },
+        "hips_cm": {
+          "target": 95.0,
+          "predicted": 97.66,
+          "abs_error": 2.66,
+          "rel_error": 0.028
+        },
+        "arm_length_cm": {
+          "target": 65.0,
+          "predicted": 65.5,
+          "abs_error": 0.5,
+          "rel_error": 0.007692
+        },
+        "leg_length_cm": {
+          "target": 88.0,
+          "predicted": 87.74,
+          "abs_error": 0.26,
+          "rel_error": 0.002955
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 89.0,
+          "predicted": 123.1174,
+          "abs_error": 34.1174,
+          "rel_error": 0.383342
+        },
+        "waist_cm": {
+          "target": 68.0,
+          "predicted": 97.8597,
+          "abs_error": 29.8597,
+          "rel_error": 0.439114
+        },
+        "hips_cm": {
+          "target": 95.0,
+          "predicted": 121.5792,
+          "abs_error": 26.5792,
+          "rel_error": 0.279781
+        },
+        "arm_length_cm": {
+          "target": 65.0,
+          "predicted": 65.5,
+          "abs_error": 0.5,
+          "rel_error": 0.007692
+        },
+        "leg_length_cm": {
+          "target": 88.0,
+          "predicted": 89.4564,
+          "abs_error": 1.4564,
+          "rel_error": 0.01655
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 89.0,
+          "predicted": 95.6652,
+          "abs_error": 6.6652,
+          "rel_error": 0.07489
+        },
+        "waist_cm": {
+          "target": 68.0,
+          "predicted": 71.9872,
+          "abs_error": 3.9872,
+          "rel_error": 0.058635
+        },
+        "hips_cm": {
+          "target": 95.0,
+          "predicted": 98.4648,
+          "abs_error": 3.4648,
+          "rel_error": 0.036472
+        },
+        "arm_length_cm": {
+          "target": 65.0,
+          "predicted": 65.5,
+          "abs_error": 0.5,
+          "rel_error": 0.007692
+        },
+        "leg_length_cm": {
+          "target": 88.0,
+          "predicted": 89.617,
+          "abs_error": 1.617,
+          "rel_error": 0.018375
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 89.0,
+          "predicted": 93.0004,
+          "abs_error": 4.0004,
+          "rel_error": 0.044948
+        },
+        "waist_cm": {
+          "target": 68.0,
+          "predicted": 69.4706,
+          "abs_error": 1.4706,
+          "rel_error": 0.021627
+        },
+        "hips_cm": {
+          "target": 95.0,
+          "predicted": 96.7169,
+          "abs_error": 1.7169,
+          "rel_error": 0.018073
+        },
+        "arm_length_cm": {
+          "target": 65.0,
+          "predicted": 65.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 88.0,
+          "predicted": 90.1362,
+          "abs_error": 2.1362,
+          "rel_error": 0.024275
+        }
+      }
+    },
+    {
+      "name": "neutral_regular_reference",
+      "gender": "neutral",
+      "height_cm": 172.0,
+      "weight_kg": 68.0,
+      "body_type": "regular",
+      "target_sources": {
+        "chest_cm": "inferred",
+        "waist_cm": "inferred",
+        "hips_cm": "inferred",
+        "arm_length_cm": "inferred",
+        "leg_length_cm": "inferred"
+      },
+      "inferred_targets": {
+        "chest_cm": 94.42,
+        "waist_cm": 76.81,
+        "hips_cm": 96.93,
+        "arm_length_cm": 63.98,
+        "leg_length_cm": 85.17
+      },
+      "inference": {
+        "chest_cm": {
+          "target": 94.0,
+          "predicted": 94.42,
+          "abs_error": 0.42,
+          "rel_error": 0.004468
+        },
+        "waist_cm": {
+          "target": 79.0,
+          "predicted": 76.81,
+          "abs_error": 2.19,
+          "rel_error": 0.027722
+        },
+        "hips_cm": {
+          "target": 96.0,
+          "predicted": 96.93,
+          "abs_error": 0.93,
+          "rel_error": 0.009688
+        },
+        "arm_length_cm": {
+          "target": 64.0,
+          "predicted": 63.98,
+          "abs_error": 0.02,
+          "rel_error": 0.000313
+        },
+        "leg_length_cm": {
+          "target": 85.0,
+          "predicted": 85.17,
+          "abs_error": 0.17,
+          "rel_error": 0.002
+        }
+      },
+      "heuristic": {
+        "chest_cm": {
+          "target": 94.0,
+          "predicted": 115.5753,
+          "abs_error": 21.5753,
+          "rel_error": 0.229525
+        },
+        "waist_cm": {
+          "target": 79.0,
+          "predicted": 96.2783,
+          "abs_error": 17.2783,
+          "rel_error": 0.218713
+        },
+        "hips_cm": {
+          "target": 96.0,
+          "predicted": 111.6218,
+          "abs_error": 15.6218,
+          "rel_error": 0.162727
+        },
+        "arm_length_cm": {
+          "target": 64.0,
+          "predicted": 63.98,
+          "abs_error": 0.02,
+          "rel_error": 0.000312
+        },
+        "leg_length_cm": {
+          "target": 85.0,
+          "predicted": 86.693,
+          "abs_error": 1.693,
+          "rel_error": 0.019918
+        }
+      },
+      "auto": {
+        "chest_cm": {
+          "target": 94.0,
+          "predicted": 98.0934,
+          "abs_error": 4.0934,
+          "rel_error": 0.043547
+        },
+        "waist_cm": {
+          "target": 79.0,
+          "predicted": 77.7299,
+          "abs_error": 1.2701,
+          "rel_error": 0.016077
+        },
+        "hips_cm": {
+          "target": 96.0,
+          "predicted": 97.6156,
+          "abs_error": 1.6156,
+          "rel_error": 0.016829
+        },
+        "arm_length_cm": {
+          "target": 64.0,
+          "predicted": 63.98,
+          "abs_error": 0.02,
+          "rel_error": 0.000313
+        },
+        "leg_length_cm": {
+          "target": 85.0,
+          "predicted": 86.6748,
+          "abs_error": 1.6748,
+          "rel_error": 0.019704
+        }
+      },
+      "exact": {
+        "chest_cm": {
+          "target": 94.0,
+          "predicted": 98.8498,
+          "abs_error": 4.8498,
+          "rel_error": 0.051593
+        },
+        "waist_cm": {
+          "target": 79.0,
+          "predicted": 79.1358,
+          "abs_error": 0.1358,
+          "rel_error": 0.001719
+        },
+        "hips_cm": {
+          "target": 96.0,
+          "predicted": 97.3107,
+          "abs_error": 1.3107,
+          "rel_error": 0.013653
+        },
+        "arm_length_cm": {
+          "target": 64.0,
+          "predicted": 64.0,
+          "abs_error": 0.0,
+          "rel_error": 0.0
+        },
+        "leg_length_cm": {
+          "target": 85.0,
+          "predicted": 86.6777,
+          "abs_error": 1.6777,
+          "rel_error": 0.019737
+        }
+      }
+    }
+  ]
+}

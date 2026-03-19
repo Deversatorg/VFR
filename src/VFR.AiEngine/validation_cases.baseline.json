@@ -1,0 +1,209 @@
+{
+  "notes": "Baseline anthropometry validation set for tuning height/weight/bodyType -> approximate body shape.",
+  "cases": [
+    {
+      "name": "male_tall_slim_athletic",
+      "gender": "male",
+      "height_cm": 190,
+      "weight_kg": 65,
+      "body_type": "athletic",
+      "measurements": {
+        "chest_cm": 95,
+        "waist_cm": 76,
+        "hips_cm": 92,
+        "arm_length_cm": 71,
+        "leg_length_cm": 98,
+        "shoulder": 46,
+        "calf": 36,
+        "torso_length": 59
+      }
+    },
+    {
+      "name": "male_average_regular",
+      "gender": "male",
+      "height_cm": 178,
+      "weight_kg": 76,
+      "body_type": "regular",
+      "measurements": {
+        "chest_cm": 99,
+        "waist_cm": 84,
+        "hips_cm": 97,
+        "arm_length_cm": 67,
+        "leg_length_cm": 90,
+        "shoulder": 45,
+        "calf": 37,
+        "torso_length": 56
+      }
+    },
+    {
+      "name": "male_athletic_medium",
+      "gender": "male",
+      "height_cm": 182,
+      "weight_kg": 82,
+      "body_type": "athletic",
+      "measurements": {
+        "chest_cm": 106,
+        "waist_cm": 82,
+        "hips_cm": 99,
+        "arm_length_cm": 68,
+        "leg_length_cm": 92,
+        "shoulder": 47,
+        "calf": 38,
+        "torso_length": 57
+      }
+    },
+    {
+      "name": "male_short_slim",
+      "gender": "male",
+      "height_cm": 165,
+      "weight_kg": 56,
+      "body_type": "slim",
+      "measurements": {
+        "chest_cm": 89,
+        "waist_cm": 73,
+        "hips_cm": 88,
+        "arm_length_cm": 61,
+        "leg_length_cm": 82,
+        "shoulder": 41,
+        "calf": 34,
+        "torso_length": 51
+      }
+    },
+    {
+      "name": "male_stocky_regular",
+      "gender": "male",
+      "height_cm": 172,
+      "weight_kg": 88,
+      "body_type": "regular",
+      "measurements": {
+        "chest_cm": 108,
+        "waist_cm": 94,
+        "hips_cm": 104,
+        "arm_length_cm": 64,
+        "leg_length_cm": 86,
+        "shoulder": 46,
+        "calf": 39,
+        "torso_length": 54
+      }
+    },
+    {
+      "name": "male_tall_curvy_plus",
+      "gender": "male",
+      "height_cm": 180,
+      "weight_kg": 110,
+      "body_type": "curvy",
+      "measurements": {
+        "chest_cm": 118,
+        "waist_cm": 108,
+        "hips_cm": 114,
+        "arm_length_cm": 68,
+        "leg_length_cm": 92,
+        "shoulder": 48,
+        "calf": 42,
+        "torso_length": 57
+      }
+    },
+    {
+      "name": "female_petite_slim",
+      "gender": "female",
+      "height_cm": 158,
+      "weight_kg": 49,
+      "body_type": "slim",
+      "measurements": {
+        "chest_cm": 84,
+        "waist_cm": 64,
+        "hips_cm": 90,
+        "arm_length_cm": 58,
+        "leg_length_cm": 76,
+        "shoulder": 38,
+        "calf": 33,
+        "torso_length": 50
+      }
+    },
+    {
+      "name": "female_average_regular",
+      "gender": "female",
+      "height_cm": 166,
+      "weight_kg": 60,
+      "body_type": "regular",
+      "measurements": {
+        "chest_cm": 90,
+        "waist_cm": 72,
+        "hips_cm": 97,
+        "arm_length_cm": 61,
+        "leg_length_cm": 80,
+        "shoulder": 39,
+        "calf": 35,
+        "torso_length": 52
+      }
+    },
+    {
+      "name": "female_athletic_medium",
+      "gender": "female",
+      "height_cm": 170,
+      "weight_kg": 63,
+      "body_type": "athletic",
+      "measurements": {
+        "chest_cm": 91,
+        "waist_cm": 69,
+        "hips_cm": 96,
+        "arm_length_cm": 63,
+        "leg_length_cm": 83,
+        "shoulder": 41,
+        "calf": 35.5,
+        "torso_length": 53
+      }
+    },
+    {
+      "name": "female_curvy_medium",
+      "gender": "female",
+      "height_cm": 168,
+      "weight_kg": 72,
+      "body_type": "curvy",
+      "measurements": {
+        "chest_cm": 98,
+        "waist_cm": 78,
+        "hips_cm": 108,
+        "arm_length_cm": 62,
+        "leg_length_cm": 82,
+        "shoulder": 40,
+        "calf": 37,
+        "torso_length": 53
+      }
+    },
+    {
+      "name": "female_tall_slim",
+      "gender": "female",
+      "height_cm": 178,
+      "weight_kg": 60,
+      "body_type": "slim",
+      "measurements": {
+        "chest_cm": 89,
+        "waist_cm": 68,
+        "hips_cm": 95,
+        "arm_length_cm": 65,
+        "leg_length_cm": 88,
+        "shoulder": 41,
+        "calf": 35,
+        "torso_length": 56
+      }
+    },
+    {
+      "name": "neutral_regular_reference",
+      "gender": "neutral",
+      "height_cm": 172,
+      "weight_kg": 68,
+      "body_type": "regular",
+      "measurements": {
+        "chest_cm": 94,
+        "waist_cm": 79,
+        "hips_cm": 96,
+        "arm_length_cm": 64,
+        "leg_length_cm": 85,
+        "shoulder": 42,
+        "calf": 35,
+        "torso_length": 54
+      }
+    }
+  ]
+}

@@ -19,11 +19,30 @@ MEASUREMENT_VERTICES = {
 }
 
 MEASUREMENT_JOINT_CHAINS = {
-    "left_arm": [(16, 18), (18, 20)],
-    "right_arm": [(17, 19), (19, 21)],
-    "left_leg": [(1, 4), (4, 7)],
-    "right_leg": [(2, 5), (5, 8)],
+    # These paths are tuned to the semantics of the UI inputs.
+    # "Arm length" is closer to collar -> shoulder -> elbow -> wrist than a
+    # full fingertip reach, and "leg length" behaves much closer to
+    # pelvis/hip -> knee -> ankle than to a full toe-inclusive path.
+    "left_arm": [(13, 16), (16, 18), (18, 20)],
+    "right_arm": [(14, 17), (17, 19), (19, 21)],
+    "left_leg": [(0, 1), (1, 4), (4, 7)],
+    "right_leg": [(0, 2), (2, 5), (5, 8)],
 }
+
+MEASUREMENT_JOINT_PATHS = {
+    "left_arm": [13, 16, 18, 20],
+    "right_arm": [14, 17, 19, 21],
+    "left_leg": [0, 1, 4, 7],
+    "right_leg": [0, 2, 5, 8],
+}
+
+LIMB_WARP_SCALE_LIMITS = {
+    "arm_length_cm": (0.90, 1.18),
+    "leg_length_cm": (0.90, 1.12),
+}
+
+TORSO_HEIGHT_PATH = [0, 3, 6, 9, 12, 15]
+TORSO_WARP_SCALE_LIMITS = (0.90, 1.18)
 
 SUPPORTED_MEASUREMENTS = {
     "chest_cm",
@@ -37,8 +56,8 @@ DEFAULT_MEASUREMENT_WEIGHTS = {
     "chest_cm": 1.0,
     "waist_cm": 1.0,
     "hips_cm": 1.0,
-    "arm_length_cm": 1.0,
-    "leg_length_cm": 1.0,
+    "arm_length_cm": 0.35,
+    "leg_length_cm": 0.5,
 }
 
 LOOP_MEASUREMENT_MAP = {
@@ -112,6 +131,260 @@ def _chain_length_cm(joints: torch.Tensor, chain: Sequence[Tuple[int, int]]) -> 
     for joint_a, joint_b in chain:
         total = total + torch.linalg.norm(joints[joint_b] - joints[joint_a], dim=0)
     return total * 100.0
+
+
+def _prepare_parent_tensor(
+    parents: torch.Tensor | np.ndarray | Sequence[int],
+    device: torch.device,
+) -> torch.Tensor:
+    if torch.is_tensor(parents):
+        parent_tensor = parents.to(device=device, dtype=torch.long)
+    else:
+        parent_tensor = torch.tensor(list(parents), dtype=torch.long, device=device)
+    return parent_tensor.reshape(-1)
+
+
+def _prepare_weights_tensor(
+    weights: torch.Tensor | np.ndarray,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    if torch.is_tensor(weights):
+        weight_tensor = weights.to(device=device, dtype=dtype)
+    else:
+        weight_tensor = torch.tensor(weights, device=device, dtype=dtype)
+    if weight_tensor.ndim != 2:
+        raise ValueError(f"weights must have shape [V, J], got {tuple(weight_tensor.shape)}.")
+    return weight_tensor
+
+
+def _build_descendants(parents: torch.Tensor) -> Dict[int, list[int]]:
+    children: Dict[int, list[int]] = {joint_idx: [] for joint_idx in range(int(parents.numel()))}
+    for child_idx, parent_idx in enumerate(parents.tolist()):
+        if parent_idx >= 0:
+            children[parent_idx].append(child_idx)
+
+    descendants: Dict[int, list[int]] = {}
+
+    def collect(node_idx: int) -> list[int]:
+        cached = descendants.get(node_idx)
+        if cached is not None:
+            return cached
+
+        result: list[int] = []
+        for child_idx in children[node_idx]:
+            result.append(child_idx)
+            result.extend(collect(child_idx))
+        descendants[node_idx] = result
+        return result
+
+    for joint_idx in children:
+        collect(joint_idx)
+
+    return descendants
+
+
+def _scale_joint_path(
+    joints: torch.Tensor,
+    descendants: Dict[int, list[int]],
+    path: Sequence[int],
+    scale_factor: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if len(path) < 2:
+        return joints, torch.zeros_like(joints)
+
+    old_joints = joints.clone()
+    new_joints = joints.clone()
+    joint_deltas = torch.zeros_like(joints)
+    moved_joints = set(path)
+
+    for segment_idx in range(1, len(path)):
+        parent_idx = path[segment_idx - 1]
+        child_idx = path[segment_idx]
+        new_joints[child_idx] = new_joints[parent_idx] + scale_factor * (
+            old_joints[child_idx] - old_joints[parent_idx]
+        )
+        joint_deltas[child_idx] = new_joints[child_idx] - old_joints[child_idx]
+
+    for joint_idx in path[1:]:
+        delta = joint_deltas[joint_idx]
+        if float(torch.linalg.norm(delta).detach().cpu().item()) <= 1e-8:
+            continue
+
+        for descendant_idx in descendants.get(joint_idx, []):
+            if descendant_idx in moved_joints:
+                continue
+            new_joints[descendant_idx] = old_joints[descendant_idx] + delta
+            joint_deltas[descendant_idx] = delta
+
+    return new_joints, joint_deltas
+
+
+def _apply_joint_deltas_to_vertices(
+    vertices: torch.Tensor,
+    joint_deltas: torch.Tensor,
+    weights: torch.Tensor,
+) -> torch.Tensor:
+    usable_joint_count = min(joint_deltas.shape[0], weights.shape[1])
+    if usable_joint_count <= 0:
+        return vertices
+
+    vertex_offsets = weights[:, :usable_joint_count] @ joint_deltas[:usable_joint_count]
+    return vertices + vertex_offsets
+
+
+def _warp_limb_pair(
+    vertices: torch.Tensor,
+    joints: torch.Tensor,
+    parents: torch.Tensor,
+    weights: torch.Tensor,
+    measurement_name: str,
+    target_length_cm: float,
+) -> tuple[torch.Tensor, torch.Tensor, float]:
+    if measurement_name == "arm_length_cm":
+        left_key, right_key = "left_arm", "right_arm"
+    elif measurement_name == "leg_length_cm":
+        left_key, right_key = "left_leg", "right_leg"
+    else:
+        return vertices, joints, 1.0
+
+    left_current = _chain_length_cm(joints, MEASUREMENT_JOINT_CHAINS[left_key])
+    right_current = _chain_length_cm(joints, MEASUREMENT_JOINT_CHAINS[right_key])
+    current_average = 0.5 * (left_current + right_current)
+    current_average_value = float(current_average.detach().cpu().item())
+    if current_average_value <= 1e-6 or target_length_cm <= 0:
+        return vertices, joints, 1.0
+
+    min_scale, max_scale = LIMB_WARP_SCALE_LIMITS[measurement_name]
+    scale_factor = max(min(float(target_length_cm) / current_average_value, max_scale), min_scale)
+    if abs(scale_factor - 1.0) <= 1e-3:
+        return vertices, joints, 1.0
+
+    descendants = _build_descendants(parents)
+    warped_joints = joints
+    accumulated_deltas = torch.zeros_like(joints)
+
+    for side_key in (left_key, right_key):
+        path = MEASUREMENT_JOINT_PATHS[side_key]
+        warped_joints, side_deltas = _scale_joint_path(
+            joints=warped_joints,
+            descendants=descendants,
+            path=path,
+            scale_factor=scale_factor,
+        )
+        accumulated_deltas = accumulated_deltas + side_deltas
+
+    warped_vertices = _apply_joint_deltas_to_vertices(
+        vertices=vertices,
+        joint_deltas=accumulated_deltas,
+        weights=weights,
+    )
+
+    return warped_vertices, warped_joints, scale_factor
+
+
+def _apply_height_compensation(
+    vertices: torch.Tensor,
+    joints: torch.Tensor,
+    parents: torch.Tensor,
+    weights: torch.Tensor,
+    target_height_cm: float,
+) -> tuple[torch.Tensor, torch.Tensor, float]:
+    current_height_cm = float(_compute_height_cm(vertices).detach().cpu().item())
+    if current_height_cm <= 1e-6 or target_height_cm <= 0:
+        return vertices, joints, 1.0
+
+    min_scale, max_scale = TORSO_WARP_SCALE_LIMITS
+    scale_factor = max(min(float(target_height_cm) / current_height_cm, max_scale), min_scale)
+    if abs(scale_factor - 1.0) <= 1e-3:
+        return vertices, joints, 1.0
+
+    descendants = _build_descendants(parents)
+    warped_joints, joint_deltas = _scale_joint_path(
+        joints=joints,
+        descendants=descendants,
+        path=TORSO_HEIGHT_PATH,
+        scale_factor=scale_factor,
+    )
+    warped_vertices = _apply_joint_deltas_to_vertices(
+        vertices=vertices,
+        joint_deltas=joint_deltas,
+        weights=weights,
+    )
+    return warped_vertices, warped_joints, scale_factor
+
+
+def apply_proportion_warp(
+    vertices: torch.Tensor,
+    joints: Optional[torch.Tensor],
+    parents: torch.Tensor | np.ndarray | Sequence[int],
+    weights: torch.Tensor | np.ndarray,
+    target_measurements: Optional[Dict[str, float]] = None,
+    target_height_cm: Optional[float] = None,
+) -> tuple[torch.Tensor, Optional[torch.Tensor], Dict[str, float]]:
+    normalized_vertices, normalized_joints, _, _ = normalize_to_target_height(
+        vertices=vertices,
+        joints=joints,
+        target_height_cm=target_height_cm,
+    )
+    if normalized_joints is None or not target_measurements:
+        return normalized_vertices, normalized_joints, {}
+
+    parent_tensor = _prepare_parent_tensor(parents, device=normalized_vertices.device)
+    weight_tensor = _prepare_weights_tensor(
+        weights=weights,
+        device=normalized_vertices.device,
+        dtype=normalized_vertices.dtype,
+    )
+
+    warped_vertices = normalized_vertices
+    warped_joints = normalized_joints
+    applied_scales: Dict[str, float] = {}
+
+    leg_target = float(target_measurements.get("leg_length_cm", 0.0) or 0.0)
+    if leg_target > 0:
+        warped_vertices, warped_joints, leg_scale = _warp_limb_pair(
+            vertices=warped_vertices,
+            joints=warped_joints,
+            parents=parent_tensor,
+            weights=weight_tensor,
+            measurement_name="leg_length_cm",
+            target_length_cm=leg_target,
+        )
+        if abs(leg_scale - 1.0) > 1e-3:
+            applied_scales["leg_length_cm"] = round(leg_scale, 4)
+            if target_height_cm is not None and target_height_cm > 0:
+                warped_vertices, warped_joints, torso_scale = _apply_height_compensation(
+                    vertices=warped_vertices,
+                    joints=warped_joints,
+                    parents=parent_tensor,
+                    weights=weight_tensor,
+                    target_height_cm=float(target_height_cm),
+                )
+                if abs(torso_scale - 1.0) > 1e-3:
+                    applied_scales["torso_height_cm"] = round(torso_scale, 4)
+                current_height_after_comp = float(_compute_height_cm(warped_vertices).detach().cpu().item())
+                if abs(current_height_after_comp - float(target_height_cm)) > 0.5:
+                    warped_vertices, warped_joints, _, _ = normalize_to_target_height(
+                        vertices=warped_vertices,
+                        joints=warped_joints,
+                        target_height_cm=target_height_cm,
+                    )
+
+    arm_target = float(target_measurements.get("arm_length_cm", 0.0) or 0.0)
+    if arm_target > 0:
+        warped_vertices, warped_joints, arm_scale = _warp_limb_pair(
+            vertices=warped_vertices,
+            joints=warped_joints,
+            parents=parent_tensor,
+            weights=weight_tensor,
+            measurement_name="arm_length_cm",
+            target_length_cm=arm_target,
+        )
+        if abs(arm_scale - 1.0) > 1e-3:
+            applied_scales["arm_length_cm"] = round(arm_scale, 4)
+
+    return warped_vertices, warped_joints, applied_scales
 
 
 def calculate_measurements(
@@ -190,7 +463,7 @@ def optimize_smplx_betas(
     num_iterations: int = 120,
     learning_rate: float = 0.05,
     device: str = "cpu",
-    regularization_weight: float = 0.01,
+    regularization_weight: float = 0.003,
     target_height_cm: Optional[float] = None,
     initial_betas: Optional[np.ndarray] = None,
     measurement_weights: Optional[Dict[str, float]] = None,
@@ -238,7 +511,7 @@ def optimize_smplx_betas(
     if measurement_weights:
         effective_weights.update(measurement_weights)
 
-    best_loss = float("inf")
+    best_measurement_loss = float("inf")
     best_iteration = -1
     best_betas = betas.detach().clone()
     stale_iterations = 0
@@ -278,7 +551,8 @@ def optimize_smplx_betas(
             weight = float(effective_weights.get(measurement_name, 1.0))
             measurement_losses.append(weight * relative_error.pow(2))
 
-        loss = torch.stack(measurement_losses).mean()
+        measurement_loss = torch.stack(measurement_losses).mean()
+        loss = measurement_loss
         if regularization_weight > 0:
             loss = loss + regularization_weight * betas.pow(2).mean()
 
@@ -291,9 +565,10 @@ def optimize_smplx_betas(
         with torch.no_grad():
             betas.clamp_(-5.0, 5.0)
 
-        current_loss = float(loss.detach().cpu().item())
-        if current_loss + min_delta < best_loss:
-            best_loss = current_loss
+        current_total_loss = float(loss.detach().cpu().item())
+        current_measurement_loss = float(measurement_loss.detach().cpu().item())
+        if current_measurement_loss + min_delta < best_measurement_loss:
+            best_measurement_loss = current_measurement_loss
             best_iteration = iteration
             best_betas = betas.detach().clone()
             stale_iterations = 0
@@ -306,10 +581,11 @@ def optimize_smplx_betas(
                 for measurement_name in active_targets
             }
             logger.info(
-                "Iteration %s/%s: loss=%.6f, measurements=%s",
+                "Iteration %s/%s: measurement_loss=%.6f, total_loss=%.6f, measurements=%s",
                 iteration + 1,
                 num_iterations,
-                current_loss,
+                current_measurement_loss,
+                current_total_loss,
                 current_values,
             )
 
@@ -337,9 +613,9 @@ def optimize_smplx_betas(
     }
 
     logger.info(
-        "Optimization finished at iteration %s with best_loss=%.6f and abs_errors=%s",
+        "Optimization finished at iteration %s with best_measurement_loss=%.6f and abs_errors=%s",
         best_iteration + 1,
-        best_loss,
+        best_measurement_loss,
         final_abs_errors,
     )
 
