@@ -9,7 +9,6 @@ using ApplicationAuth.Features.Account.Shared;
 using ApplicationAuth.Features.AdminUsers;
 using ApplicationAuth.Features.Test;
 using ApplicationAuth.Features.Telegram;
-using ApplicationAuth.Features.Telegram.Models;
 using ApplicationAuth.SharedModels.ResponseModels;
 
 namespace ApplicationAuth.SharedModels;
@@ -19,7 +18,6 @@ namespace ApplicationAuth.SharedModels;
 [JsonSerializable(typeof(RegisterRequest))]
 [JsonSerializable(typeof(RefreshTokenRequest))]
 [JsonSerializable(typeof(TelegramMessageRequest))]
-[JsonSerializable(typeof(TelegramMessageRequestModel))]
 
 [JsonSerializable(typeof(LoginResponse))]
 [JsonSerializable(typeof(RegisterResponse))]
@@ -28,8 +26,7 @@ namespace ApplicationAuth.SharedModels;
 [JsonSerializable(typeof(ApplicationAuth.Features.AdminUsers.UserResponse), TypeInfoPropertyName = "AdminUserResponse")]
 [JsonSerializable(typeof(UserTableRowResponse))]
 [JsonSerializable(typeof(TelegramMessageResponse))]
-[JsonSerializable(typeof(TelegramStickerResponseModel))]
-[JsonSerializable(typeof(TelegramMessageResponseModel))]
+[JsonSerializable(typeof(TelegramStickerResponse))]
 [JsonSerializable(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails))]
 [JsonSerializable(typeof(ShortAuthorizationRequestModel))]
 
@@ -49,11 +46,9 @@ namespace ApplicationAuth.SharedModels;
 [JsonSerializable(typeof(JsonPaginationResponse<IEnumerable<UserTableRowResponse>>))]
 [JsonSerializable(typeof(List<UserTableRowResponse>))]
 [JsonSerializable(typeof(IEnumerable<TelegramMessageResponse>))]
-[JsonSerializable(typeof(IEnumerable<TelegramMessageResponseModel>))]
-[JsonSerializable(typeof(IEnumerable<TelegramStickerResponseModel>))]
 [JsonSerializable(typeof(List<TelegramMessageResponse>))]
-[JsonSerializable(typeof(List<TelegramMessageResponseModel>))]
-[JsonSerializable(typeof(List<TelegramStickerResponseModel>))]
+[JsonSerializable(typeof(IEnumerable<TelegramStickerResponse>))]
+[JsonSerializable(typeof(List<TelegramStickerResponse>))]
 [JsonSerializable(typeof(Dictionary<string, string[]>))]
 [JsonSerializable(typeof(Dictionary<string, List<string>>))]
 

@@ -14,13 +14,6 @@ public class GetProfileHandler(ProfileDbContext dbContext) : IRequestHandler<Get
 
         if (profile is null) return null;
 
-        return new GetProfileResponse
-        {
-            Id = profile.Id,
-            UserId = profile.UserId,
-            Height = (double)profile.Height,
-            Weight = (double)profile.Weight,
-            BodyType = profile.BodyType.ToString()
-        };
+        return GetProfileResponse.FromProfile(profile);
     }
 }

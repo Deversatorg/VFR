@@ -6,12 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <DocumentationFile>bin\Debug\net10.0\ApplicationAuth.xml</DocumentationFile>
-  </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="AspNetCore.HealthChecks.Sqlite" Version="9.0.0" />
     <PackageReference Include="AWSSDK.Core" Version="3.7.1" />
     <PackageReference Include="AWSSDK.DynamoDBv2" Version="3.7.0.45" />
     <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.1" />
@@ -49,10 +44,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <DotNetCliToolReference Include="Microsoft.VisualStudio.Web.CodeGeneration.Tools" Version="2.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\ApplicationAuth.Common\ApplicationAuth.Common.csproj" />
     <ProjectReference Include="..\ApplicationAuth.DAL\ApplicationAuth.DAL.csproj" />
     <ProjectReference Include="..\ApplicationAuth.Domain\ApplicationAuth.Domain.csproj" />
@@ -67,15 +58,6 @@
   <ItemGroup>
     <None Include="wwwroot\HtmlContentTemplates\HtmlLayout.html" />
     <None Include="wwwroot\Swagger\swagger-ui.style.css" />
-  </ItemGroup>
-
-  <PropertyGroup>
-    <EnvironmentName>Development</EnvironmentName>
-  </PropertyGroup>
-
-  <ItemGroup Condition="'$(EnvironmentName)' == 'Production'">
-    <Compile Remove="Controllers\API\TestController.cs" />
-    <Content Remove="Controllers\API\TestController.cs" />
   </ItemGroup>
 
   <ItemGroup>

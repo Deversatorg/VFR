@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+import importlib.util
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import torch
+
+
+if Path("/app/ml_pipeline.py").exists():
+    AI_ENGINE_DIR = Path("/app")
+else:
+    REPO_ROOT = Path(__file__).resolve().parents[3]
+    AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
+ML_PIPELINE_PATH = AI_ENGINE_DIR / "ml_pipeline.py"
+MEASUREMENT_OPTIMIZER_PATH = AI_ENGINE_DIR / "measurement_optimizer.py"
+
+
+def _load_module(module_name: str, module_path: Path):
+    sys.path.insert(0, str(AI_ENGINE_DIR))
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class ProxyTargetRegressionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ml_pipeline = _load_module("vfr_aiengine_ml_pipeline_proxy_tests", ML_PIPELINE_PATH)
+        cls.measurement_optimizer = _load_module(
+            "vfr_aiengine_measurement_optimizer_proxy_tests",
+            MEASUREMENT_OPTIMIZER_PATH,
+        )
+
+    def test_normalize_proxy_slider_handles_percent_and_unit_inputs(self):
+        normalize = self.ml_pipeline.normalize_proxy_slider
+
+        self.assertEqual(normalize(72), 0.72)
+        self.assertEqual(normalize(0.72), 0.72)
+        self.assertEqual(normalize(-5), 0.0)
+        self.assertEqual(normalize(140), 1.0)
+        self.assertEqual(normalize(None), 0.0)
+
+    def test_calculate_proxy_targets_is_deterministic_for_gender_profiles(self):
+        exact_measurements = {
+            "chest_cm": 100.0,
+            "hips_cm": 96.0,
+        }
+
+        male_targets = self.ml_pipeline.calculate_proxy_targets(
+            exact_measurements=exact_measurements,
+            muscle_slider=72,
+            fat_slider=14,
+            gender="male",
+        )
+        female_targets = self.ml_pipeline.calculate_proxy_targets(
+            exact_measurements=exact_measurements,
+            muscle_slider=72,
+            fat_slider=14,
+            gender="female",
+        )
+        neutral_targets = self.ml_pipeline.calculate_proxy_targets(
+            exact_measurements=exact_measurements,
+            muscle_slider=72,
+            fat_slider=14,
+            gender="neutral",
+        )
+
+        for measured, expected in (
+            (male_targets, {"shoulder_circumference_cm": 122.62, "bicep_circumference_cm": 31.04, "thigh_circumference_cm": 56.3712}),
+            (female_targets, {"shoulder_circumference_cm": 115.60, "bicep_circumference_cm": 24.88, "thigh_circumference_cm": 59.0976}),
+            (neutral_targets, {"shoulder_circumference_cm": 119.11, "bicep_circumference_cm": 27.96, "thigh_circumference_cm": 57.7344}),
+        ):
+            self.assertEqual(set(measured), set(expected))
+            for measurement_name, expected_value in expected.items():
+                self.assertAlmostEqual(measured[measurement_name], expected_value, places=5)
+
+    def test_calculate_proxy_targets_changes_with_composition_mix(self):
+        exact_measurements = {
+            "chest_cm": 105.0,
+            "hips_cm": 101.0,
+        }
+
+        muscle_heavy = self.ml_pipeline.calculate_proxy_targets(
+            exact_measurements=exact_measurements,
+            muscle_slider=0.9,
+            fat_slider=0.1,
+            gender="male",
+        )
+        fat_heavy = self.ml_pipeline.calculate_proxy_targets(
+            exact_measurements=exact_measurements,
+            muscle_slider=0.1,
+            fat_slider=0.9,
+            gender="male",
+        )
+
+        self.assertGreater(
+            muscle_heavy["bicep_circumference_cm"],
+            fat_heavy["bicep_circumference_cm"],
+        )
+        self.assertGreater(
+            fat_heavy["thigh_circumference_cm"],
+            muscle_heavy["thigh_circumference_cm"],
+        )
+
+    def test_measurement_optimizer_metadata_includes_proxy_measurements(self):
+        optimizer = self.measurement_optimizer
+
+        self.assertIn("shoulder_circumference_cm", optimizer.SUPPORTED_MEASUREMENTS)
+        self.assertIn("bicep_circumference_cm", optimizer.SUPPORTED_MEASUREMENTS)
+        self.assertIn("thigh_circumference_cm", optimizer.SUPPORTED_MEASUREMENTS)
+        self.assertEqual(optimizer.DEFAULT_MEASUREMENT_WEIGHTS["chest_cm"], 1.0)
+        self.assertEqual(optimizer.DEFAULT_MEASUREMENT_WEIGHTS["waist_cm"], 1.0)
+        self.assertEqual(optimizer.DEFAULT_MEASUREMENT_WEIGHTS["hips_cm"], 1.0)
+        self.assertEqual(optimizer.DEFAULT_MEASUREMENT_WEIGHTS["shoulder_circumference_cm"], 0.3)
+        self.assertEqual(optimizer.DEFAULT_MEASUREMENT_WEIGHTS["bicep_circumference_cm"], 0.5)
+        self.assertEqual(optimizer.DEFAULT_MEASUREMENT_WEIGHTS["thigh_circumference_cm"], 0.5)
+        self.assertEqual(
+            optimizer.LOOP_MEASUREMENT_MAP["shoulder_circumference_cm"],
+            "shoulder_circumference",
+        )
+
+    def test_calculate_measurements_exposes_proxy_loop_outputs(self):
+        optimizer = self.measurement_optimizer
+        dummy_vertices = torch.zeros((8, 3), dtype=torch.float32)
+
+        proxy_values = {
+            "shoulder_circumference": torch.tensor(118.0),
+            "bicep_circumference": torch.tensor(33.0),
+            "thigh_circumference": torch.tensor(61.0),
+        }
+
+        with (
+            patch.object(optimizer, "_has_valid_loop", side_effect=lambda name: name in proxy_values),
+            patch.object(optimizer, "_loop_circumference_cm", side_effect=lambda vertices, name: proxy_values[name]),
+        ):
+            measured = optimizer.calculate_measurements(
+                vertices=dummy_vertices,
+                joints=None,
+                target_height_cm=None,
+            )
+
+        self.assertEqual(float(measured["shoulder_circumference_cm"]), 118.0)
+        self.assertEqual(float(measured["bicep_circumference_cm"]), 33.0)
+        self.assertEqual(float(measured["thigh_circumference_cm"]), 61.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

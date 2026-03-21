@@ -1,5 +1,16 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "ApplicationAuthAuthServer";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "Client";
+var jwtSigningKey = builder.Configuration["Jwt:SigningKey"];
+var bootstrapAdminEmail = builder.Configuration["BootstrapAdmin:Email"] ?? "admin@test.com";
+var bootstrapAdminPassword = builder.Configuration["BootstrapAdmin:Password"] ?? "Welcome1!";
+if (string.IsNullOrWhiteSpace(jwtSigningKey))
+{
+    jwtSigningKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64));
+    Console.WriteLine("[AppHost] Jwt:SigningKey was not configured. Generated an ephemeral development signing key.");
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Infrastructure
 // ──────────────────────────────────────────────────────────────────
@@ -64,16 +75,22 @@ var aiEngineWorker = builder.AddDockerfile("vfr-aiengine-worker", "../VFR.AiEngi
 var authService = builder.AddProject<Projects.ApplicationAuth>("vfr-auth")
     .WithReference(authDb)
     .WithEnvironment("ConnectionStrings__Connection", authDb)
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Jwt__SigningKey", jwtSigningKey)
+    .WithEnvironment("BootstrapAdmin__Email", bootstrapAdminEmail)
+    .WithEnvironment("BootstrapAdmin__Password", bootstrapAdminPassword)
     .WaitFor(authDb);
 
 var profileApi = builder.AddProject<Projects.VFR_ProfileApi>("vfr-profileapi")
     .WithReference(profileDb)
     .WithReference(redis)
     .WithReference(authService)   // JWT validation service discovery
-    .WithReference(aiEngine.GetEndpoint("grpc")) // Inject AI Engine grpc endpoint
+    .WithEnvironment("Jwt__Issuer", jwtIssuer)
+    .WithEnvironment("Jwt__Audience", jwtAudience)
+    .WithEnvironment("Jwt__SigningKey", jwtSigningKey)
     .WaitFor(profileDb)
     .WaitFor(redis)
-    .WaitFor(aiEngine)
     .WaitFor(authService);
 
 var vfrWeb = builder.AddNpmApp("vfr-web", "../vfr-web", "dev")
@@ -89,5 +106,8 @@ var vfrWeb = builder.AddNpmApp("vfr-web", "../vfr-web", "dev")
     .WithHttpEndpoint(env: "PORT")
     .WithExternalHttpEndpoints()
     .PublishAsDockerFile();
+
+authService.WithEnvironment("Cors__AllowedOrigins__0", vfrWeb.GetEndpoint("http"));
+profileApi.WithEnvironment("Cors__AllowedOrigins__0", vfrWeb.GetEndpoint("http"));
 
 builder.Build().Run();

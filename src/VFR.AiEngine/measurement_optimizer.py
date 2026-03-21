@@ -14,6 +14,14 @@ MEASUREMENT_VERTICES = {
     "chest_circumference": [3573, 3315, 3314, 3897, 5449, 5531, 8183, 6645, 6077, 6078, 6334, 8340, 8339, 8338, 8342, 8341, 6005, 6003, 8179, 8178, 8262, 8263, 6796, 6134, 6133, 6150, 8267, 8216, 6815, 6814, 6813, 6640, 7188, 6623, 6142, 6143, 5487, 3382, 3381, 3872, 4452, 3892, 4069, 4070, 4071, 5482, 5554, 3389, 3372, 3373, 4050, 5550, 5549, 5444, 5445, 3240, 3242, 5647, 5648, 5644, 5645, 5646],
     "waist_circumference": [3335, 3308, 3293, 3550, 3549, 3547, 3546, 4400, 5940, 7136, 6307, 6308, 6310, 6311, 6056, 6071, 6098, 6329, 6070, 6222, 6221, 6236, 6235, 6278, 8240, 8239, 7137, 7138, 5493, 4402, 4401, 5517, 5520, 3517, 3474, 3475, 3460, 3461, 3307, 3568],
     "hips_circumference": [3454, 3562, 4145, 4144, 4084, 3842, 3841, 3495, 3494, 4321, 6255, 6256, 6596, 6597, 6828, 6888, 6889, 6323, 6215, 6202, 6201, 8356, 8363, 8386, 8379, 8378, 6635, 6634, 8389, 5575, 5695, 3884, 3885, 5684, 5685, 5692, 5669, 5662, 3440, 3441],
+    # Upper-torso slice extracted around 75% standing height. This remains a
+    # proxy loop, but it is distinct from the chest contour so shoulder targets
+    # can move independently instead of fighting the chest measurement directly.
+    "shoulder_circumference": [3313, 3310, 4397, 4169, 3835, 3834, 3979, 3980, 3334, 5439, 5440, 5643, 5641, 5640, 5637, 5636, 3984, 3983, 3895, 3894, 5657, 5938, 8351, 6642, 6643, 6731, 6732, 8330, 8331, 8334, 8335, 8337, 8174, 8173, 6097, 6728, 6727, 6589, 6590, 6913, 7133, 6073, 6076, 6659, 6661, 6146, 7233, 6105, 6880, 7193, 8272, 7189, 7190, 8245, 8243, 8241, 8242, 8327, 5947, 5633, 5522, 5521, 5523, 5525, 4454, 4453, 5560, 4457, 4136, 3342, 4497, 3385, 3913, 3911],
+    # Placeholder average proxy loop; currently mirrors the extracted left side.
+    "bicep_circumference": [3318, 3319, 3826, 3825, 3571, 4392, 3276, 3277, 3910, 3356, 3352, 3523, 3521, 5427, 3399, 3400, 5489, 6161, 6160, 8161, 6282, 6284, 6115, 6117, 6658, 6040, 6039, 7128, 6332, 6582, 6583, 6082, 6081, 6083, 6052, 6319, 6085, 6729, 5534, 3981, 3322, 3558, 3289, 3320],
+    # Placeholder average proxy loop; currently mirrors the extracted left side.
+    "thigh_circumference": [3770, 5702, 5701, 3858, 3797, 4131, 4086, 5706, 3794, 3792, 4133, 4134, 4110, 3480, 3477, 3574, 3482, 3465, 3464, 3867, 3501, 3500, 3993, 3773],
     "left_bicep_circumference": [3318, 3319, 3826, 3825, 3571, 4392, 3276, 3277, 3910, 3356, 3352, 3523, 3521, 5427, 3399, 3400, 5489, 6161, 6160, 8161, 6282, 6284, 6115, 6117, 6658, 6040, 6039, 7128, 6332, 6582, 6583, 6082, 6081, 6083, 6052, 6319, 6085, 6729, 5534, 3981, 3322, 3558, 3289, 3320],
     "left_thigh_circumference": [3770, 5702, 5701, 3858, 3797, 4131, 4086, 5706, 3794, 3792, 4133, 4134, 4110, 3480, 3477, 3574, 3482, 3465, 3464, 3867, 3501, 3500, 3993, 3773],
 }
@@ -48,6 +56,11 @@ SUPPORTED_MEASUREMENTS = {
     "chest_cm",
     "waist_cm",
     "hips_cm",
+    "shoulder_circumference_cm",
+    "bicep_circumference_cm",
+    "thigh_circumference_cm",
+    "left_bicep_cm",
+    "left_thigh_cm",
     "arm_length_cm",
     "leg_length_cm",
 }
@@ -56,14 +69,37 @@ DEFAULT_MEASUREMENT_WEIGHTS = {
     "chest_cm": 1.0,
     "waist_cm": 1.0,
     "hips_cm": 1.0,
+    "shoulder_circumference_cm": 0.3,
+    "bicep_circumference_cm": 0.5,
+    "thigh_circumference_cm": 0.5,
+    "left_bicep_cm": 0.9,
+    "left_thigh_cm": 0.85,
     "arm_length_cm": 0.35,
     "leg_length_cm": 0.5,
 }
+
+SHAPE_PRESERVATION_BETA_WEIGHTS = (
+    1.8,  # beta[0]: overall bulk / weight
+    3.2,  # beta[1]: muscle taper / V-shape
+    3.0,  # beta[2]: roundness / softness
+    1.2,
+    0.8,
+    0.8,
+    0.6,
+    0.5,
+    0.5,
+    0.5,
+)
 
 LOOP_MEASUREMENT_MAP = {
     "chest_cm": "chest_circumference",
     "waist_cm": "waist_circumference",
     "hips_cm": "hips_circumference",
+    "shoulder_circumference_cm": "shoulder_circumference",
+    "bicep_circumference_cm": "bicep_circumference",
+    "thigh_circumference_cm": "thigh_circumference",
+    "left_bicep_cm": "left_bicep_circumference",
+    "left_thigh_cm": "left_thigh_circumference",
 }
 
 
@@ -409,6 +445,12 @@ def calculate_measurements(
         measurements["waist_cm"] = _loop_circumference_cm(normalized_vertices, "waist_circumference")
     if _has_valid_loop("hips_circumference"):
         measurements["hips_cm"] = _loop_circumference_cm(normalized_vertices, "hips_circumference")
+    if _has_valid_loop("shoulder_circumference"):
+        measurements["shoulder_circumference_cm"] = _loop_circumference_cm(normalized_vertices, "shoulder_circumference")
+    if _has_valid_loop("bicep_circumference"):
+        measurements["bicep_circumference_cm"] = _loop_circumference_cm(normalized_vertices, "bicep_circumference")
+    if _has_valid_loop("thigh_circumference"):
+        measurements["thigh_circumference_cm"] = _loop_circumference_cm(normalized_vertices, "thigh_circumference")
     if _has_valid_loop("left_bicep_circumference"):
         measurements["left_bicep_cm"] = _loop_circumference_cm(normalized_vertices, "left_bicep_circumference")
     if _has_valid_loop("left_thigh_circumference"):
@@ -466,6 +508,7 @@ def optimize_smplx_betas(
     regularization_weight: float = 0.003,
     target_height_cm: Optional[float] = None,
     initial_betas: Optional[np.ndarray] = None,
+    shape_preservation_weight: float = 0.2,
     measurement_weights: Optional[Dict[str, float]] = None,
     patience: int = 20,
     min_delta: float = 1e-5,
@@ -505,6 +548,12 @@ def optimize_smplx_betas(
     ).to(torch_device)
 
     betas = _prepare_initial_betas(initial_betas=initial_betas, device=torch_device, dtype=dtype)
+    initial_beta_anchor = betas.detach().clone() if initial_betas is not None else None
+    beta_preservation_weights = torch.tensor(
+        SHAPE_PRESERVATION_BETA_WEIGHTS,
+        dtype=dtype,
+        device=torch_device,
+    ).reshape(1, -1)
     optimizer = torch.optim.Adam([betas], lr=learning_rate)
 
     effective_weights = dict(DEFAULT_MEASUREMENT_WEIGHTS)
@@ -512,15 +561,17 @@ def optimize_smplx_betas(
         effective_weights.update(measurement_weights)
 
     best_measurement_loss = float("inf")
+    best_objective_loss = float("inf")
     best_iteration = -1
     best_betas = betas.detach().clone()
     stale_iterations = 0
 
     logger.info(
-        "Starting SMPL-X measurement optimization for %s with targets=%s, target_height_cm=%s",
+        "Starting SMPL-X measurement optimization for %s with targets=%s, target_height_cm=%s, shape_preservation_weight=%.3f",
         gender,
         active_targets,
         target_height_cm,
+        shape_preservation_weight,
     )
 
     for iteration in range(num_iterations):
@@ -553,6 +604,11 @@ def optimize_smplx_betas(
 
         measurement_loss = torch.stack(measurement_losses).mean()
         loss = measurement_loss
+        shape_preservation_loss = torch.zeros((), dtype=dtype, device=torch_device)
+        if initial_beta_anchor is not None and shape_preservation_weight > 0:
+            beta_drift = (betas - initial_beta_anchor).pow(2)
+            shape_preservation_loss = (beta_drift * beta_preservation_weights).mean()
+            loss = loss + shape_preservation_weight * shape_preservation_loss
         if regularization_weight > 0:
             loss = loss + regularization_weight * betas.pow(2).mean()
 
@@ -563,11 +619,19 @@ def optimize_smplx_betas(
         optimizer.step()
 
         with torch.no_grad():
-            betas.clamp_(-5.0, 5.0)
+            betas.clamp_(-4.0, 4.0)
 
         current_total_loss = float(loss.detach().cpu().item())
         current_measurement_loss = float(measurement_loss.detach().cpu().item())
-        if current_measurement_loss + min_delta < best_measurement_loss:
+        current_shape_preservation_loss = float(shape_preservation_loss.detach().cpu().item())
+        if (
+            current_total_loss + min_delta < best_objective_loss
+            or (
+                abs(current_total_loss - best_objective_loss) <= min_delta
+                and current_measurement_loss + min_delta < best_measurement_loss
+            )
+        ):
+            best_objective_loss = current_total_loss
             best_measurement_loss = current_measurement_loss
             best_iteration = iteration
             best_betas = betas.detach().clone()
@@ -581,10 +645,11 @@ def optimize_smplx_betas(
                 for measurement_name in active_targets
             }
             logger.info(
-                "Iteration %s/%s: measurement_loss=%.6f, total_loss=%.6f, measurements=%s",
+                "Iteration %s/%s: measurement_loss=%.6f, shape_preservation_loss=%.6f, total_loss=%.6f, measurements=%s",
                 iteration + 1,
                 num_iterations,
                 current_measurement_loss,
+                current_shape_preservation_loss,
                 current_total_loss,
                 current_values,
             )
@@ -613,8 +678,9 @@ def optimize_smplx_betas(
     }
 
     logger.info(
-        "Optimization finished at iteration %s with best_measurement_loss=%.6f and abs_errors=%s",
+        "Optimization finished at iteration %s with best_objective_loss=%.6f, best_measurement_loss=%.6f and abs_errors=%s",
         best_iteration + 1,
+        best_objective_loss,
         best_measurement_loss,
         final_abs_errors,
     )

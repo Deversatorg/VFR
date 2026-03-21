@@ -38,6 +38,9 @@ build/
 
 # Aspire
 .aspire/
+.codex_build/
+output/
+tmp/
 
 # Python
 __pycache__/

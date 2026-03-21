@@ -30,7 +30,6 @@ using ApplicationAuth.Features.Payments.Webhook;
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.CookiePolicy;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -70,6 +69,39 @@ try
 
     // --- Configuration ---
     var configuration = builder.Configuration;
+    var jwtIssuer = configuration["Jwt:Issuer"]?.Trim() ?? AuthOptions.DefaultIssuer;
+    var jwtAudience = configuration["Jwt:Audience"]?.Trim() ?? AuthOptions.DefaultAudience;
+    var jwtSigningKey = configuration["Jwt:SigningKey"]?.Trim();
+    if (string.IsNullOrWhiteSpace(jwtSigningKey))
+    {
+        if (builder.Environment.IsEnvironment("Testing"))
+        {
+            jwtSigningKey = "integration-tests-signing-key-1234567890";
+        }
+        else
+        {
+            throw new InvalidOperationException("JWT signing key is not configured. Set Jwt:SigningKey.");
+        }
+    }
+
+    var allowedCorsOrigins = configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>()?
+        .Where(origin => !string.IsNullOrWhiteSpace(origin))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray() ?? Array.Empty<string>();
+
+    static bool IsLocalDevelopmentOrigin(string? origin)
+    {
+        if (string.IsNullOrWhiteSpace(origin) || !Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase));
+    }
 
     // --- Logging ---
     builder.Services.AddSerilog((services, lc) => lc
@@ -119,7 +151,6 @@ builder.Services.Configure<DataProtectionTokenProviderOptions>(o =>
 
 // --- Services Registration ---
 builder.Services.AddScoped<IDataContext, DataContext>();
-builder.Services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 builder.Services.AddSingleton<IHashUtility, HashUtility>();
 builder.Services.AddTransient<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<IJWTService, JWTService>();
@@ -240,12 +271,12 @@ builder.Services.AddAuthentication(options =>
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
-        ValidIssuer = AuthOptions.ISSUER,
+        ValidIssuer = jwtIssuer,
         ValidateAudience = true,
         ValidateActor = false,
-        ValidAudience = AuthOptions.AUDIENCE,
+        ValidAudience = jwtAudience,
         ValidateLifetime = true,
-        IssuerSigningKey = AuthOptions.GetSymmetricSecurityKey(),
+        IssuerSigningKey = AuthOptions.GetSymmetricSecurityKey(jwtSigningKey),
         ValidateIssuerSigningKey = true,
         LifetimeValidator = (DateTime? notBefore, DateTime? expires, SecurityToken securityToken, TokenValidationParameters validationParameters) =>
         {
@@ -261,14 +292,19 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddMemoryCache();
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("DevCors", policy =>
+    options.AddPolicy("AppCors", policy =>
     {
-        // SetIsOriginAllowed(_ => true) is required when using AllowCredentials()
-        // without hardcoding specific origins. This covers dynamic Aspire ports.
-        policy.SetIsOriginAllowed(_ => true)
+        if (allowedCorsOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedCorsOrigins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+            return;
+        }
+
+        policy.SetIsOriginAllowed(IsLocalDevelopmentOrigin)
               .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+              .AllowAnyMethod();
     });
 });
 
@@ -284,23 +320,6 @@ app.UseRequestLocalization(new RequestLocalizationOptions
     DefaultRequestCulture = new RequestCulture("en"),
     SupportedCultures = supportedCultures,
     SupportedUICultures = supportedCultures
-});
-
-// Cookie Auth extraction
-app.UseCookiePolicy(new CookiePolicyOptions
-{
-    MinimumSameSitePolicy = SameSiteMode.Strict,
-    HttpOnly = HttpOnlyPolicy.Always,
-    Secure = CookieSecurePolicy.Always
-});
-
-app.Use(async (context, next) =>
-{
-    var token = context.Request.Cookies[".AspNetCore.Application.Id"];
-    if (!string.IsNullOrEmpty(token))
-        context.Request.Headers.Append("Authorization", "Bearer " + token);
-
-    await next();
 });
 
 if (app.Environment.IsDevelopment())
@@ -324,10 +343,9 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/swagger/v1/swagger.json", "V1");
 });
 
-app.UseCors("DevCors");
-
 app.UseStaticFiles();
 app.UseRouting();
+app.UseCors("AppCors");
 
 app.UseSerilogRequestLogging();
 
@@ -414,7 +432,10 @@ app.MapGetAllUsersEndpoints();
 app.MapDeleteUserEndpoints();
 app.MapGetAllAdminsEndpoints();
 app.MapTelegramEndpoints();
-app.MapTestEndpoints();
+if (app.Environment.IsDevelopment() && configuration.GetValue<bool>("Features:EnableDangerousTestEndpoints"))
+{
+    app.MapTestEndpoints();
+}
 
 // Payment Endpoints (Stripe)
 app.MapGetPlansEndpoint();
@@ -425,9 +446,10 @@ app.MapStripeWebhookEndpoint();
 // Health Check Endpoint
 app.MapHealthChecks("/health");
 
-// Run DB Migrations / Initialization at startup
-using (var scope = app.Services.CreateScope())
+// Allow tests to replace the provider without trying to run PostgreSQL migrations/seeding.
+if (!DatabaseBootstrapControl.ShouldSkip(configuration))
 {
+    using var scope = app.Services.CreateScope();
     var services = scope.ServiceProvider;
     try
     {
@@ -447,17 +469,21 @@ using (var scope = app.Services.CreateScope())
         }
 
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        if (userManager.FindByEmailAsync("admin@test.com").GetAwaiter().GetResult() == null)
+        var bootstrapAdminEmail = configuration["BootstrapAdmin:Email"]?.Trim();
+        var bootstrapAdminPassword = configuration["BootstrapAdmin:Password"];
+        if (!string.IsNullOrWhiteSpace(bootstrapAdminEmail)
+            && !string.IsNullOrWhiteSpace(bootstrapAdminPassword)
+            && userManager.FindByEmailAsync(bootstrapAdminEmail).GetAwaiter().GetResult() == null)
         {
             var adminUser = new ApplicationUser
             {
-                UserName = "admin@test.com",
-                Email = "admin@test.com",
+                UserName = bootstrapAdminEmail,
+                Email = bootstrapAdminEmail,
                 EmailConfirmed = true,
                 IsActive = true,
                 RegistratedAt = DateTime.UtcNow
             };
-            userManager.CreateAsync(adminUser, "Welcome1!").GetAwaiter().GetResult();
+            userManager.CreateAsync(adminUser, bootstrapAdminPassword).GetAwaiter().GetResult();
             userManager.AddToRoleAsync(adminUser, Role.SuperAdmin).GetAwaiter().GetResult();
         }
 
@@ -501,6 +527,14 @@ using (var scope = app.Services.CreateScope())
 }
 catch (Exception ex)
 {
+    var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+        ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+
+    if (string.Equals(environmentName, "Testing", StringComparison.OrdinalIgnoreCase))
+    {
+        throw;
+    }
+
     Log.Fatal(ex, "Application terminated unexpectedly");
 }
 finally

@@ -109,6 +109,8 @@ class ProfileAvatarRequest(BaseModel):
     weight: float
     body_type: str
     gender: str = 'neutral'
+    muscularity: float = 0
+    body_fat_percentage: float = 0
     chest: float = 0
     waist: float = 0
     hip: float = 0
@@ -152,6 +154,7 @@ async def generate_avatar_from_profile(request: ProfileAvatarRequest):
     task = generate_3d_avatar_from_profile.apply_async(
         args=[
             task_id, request.user_id, request.height, request.weight, request.body_type, request.gender,
+            request.muscularity, request.body_fat_percentage,
             request.chest, request.waist, request.hip, request.shoulder, request.calf,
             request.arm_length, request.torso_length, request.leg_length, request.face_image_url
         ],

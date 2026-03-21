@@ -1,34 +1,47 @@
-import { useRef, useEffect, useMemo, useState, Suspense } from 'react';
-import { useFrame, createPortal } from '@react-three/fiber';
-import { Float, MeshDistortMaterial, useGLTF, useAnimations, Html } from '@react-three/drei';
-import * as THREE from 'three';
+import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createPortal, useFrame } from '@react-three/fiber';
 import { ErrorBoundary, type FallbackProps } from 'react-error-boundary';
-
-// ─── Public Props ─────────────────────────────────────────────────────────────
+import { Float, Html, MeshDistortMaterial, useAnimations, useGLTF } from '@react-three/drei';
+import * as THREE from 'three';
 
 export interface AvatarViewerProps {
     modelUrl?: string | null;
+    renderMode?: 'preview' | 'generated';
     height?: number;
     weight?: number;
     bodyType?: string;
+    muscularity?: number;
+    bodyFatPercentage?: number;
     gender?: 'male' | 'female';
     animation?: 'idle' | 'walk' | 'run' | 'jump' | 'tpose';
-    showShirt?: boolean;
-    /** Override garment GLB path. Defaults to /models/garments/t-shirt.glb */
+    showGarment?: boolean;
     garmentUrl?: string;
+    garmentTint?: string;
+    showGarmentDebug?: boolean;
 }
 
-// ─── Bone search ──────────────────────────────────────────────────────────────
+const DEFAULT_GARMENT_URL = '/models/garments/t-shirt.glb';
 
 const SPINE_CANDIDATES = [
-    'mixamorig:Spine2', 'mixamorig:Spine1', 'mixamorig:Spine',
-    'Spine2', 'Spine1', 'Spine', 'Chest', 'chest', 
-    'spine_3', 'spine_2', 'spine_1', 'spine', 'pelvis'
+    'mixamorig:Spine2',
+    'mixamorig:Spine1',
+    'mixamorig:Spine',
+    'Spine2',
+    'Spine1',
+    'Spine',
+    'Chest',
+    'chest',
+    'spine_3',
+    'spine_2',
+    'spine_1',
+    'spine',
+    'pelvis',
 ];
 
 function findSpineAnchor(root: THREE.Object3D): THREE.Object3D | null {
     const boneMap = new Map<string, THREE.Object3D>();
     const nodeMap = new Map<string, THREE.Object3D>();
+
     root.traverse(node => {
         if (node.name && !nodeMap.has(node.name)) {
             nodeMap.set(node.name, node);
@@ -37,156 +50,275 @@ function findSpineAnchor(root: THREE.Object3D): THREE.Object3D | null {
             boneMap.set(node.name, node);
         }
     });
+
     for (const name of SPINE_CANDIDATES) {
         const bone = boneMap.get(name);
-        if (bone) return bone;
+        if (bone) {
+            return bone;
+        }
         const node = nodeMap.get(name);
-        if (node) return node;
+        if (node) {
+            return node;
+        }
     }
-    // Any named node with "spine", "chest", or "pelvis" in its name.
+
     let fallback: THREE.Object3D | null = null;
     root.traverse(node => {
         if (!fallback && node.name) {
-            const l = node.name.toLowerCase();
-            if (l.includes('spine') || l.includes('chest') || l.includes('pelvis')) {
+            const normalized = node.name.toLowerCase();
+            if (normalized.includes('spine') || normalized.includes('chest') || normalized.includes('pelvis')) {
                 fallback = node;
             }
         }
     });
+
     return fallback;
 }
 
-// ─── Debug Panel ──────────────────────────────────────────────────────────────
+function cloneMaterialWithTint(material: THREE.Material, tint?: string) {
+    const clonedMaterial = material.clone();
+    if (tint) {
+        const maybeColorMaterial = clonedMaterial as THREE.Material & { color?: THREE.Color };
+        if (maybeColorMaterial.color instanceof THREE.Color) {
+            maybeColorMaterial.color.set(tint);
+        }
+    }
+    return clonedMaterial;
+}
+
+function cloneGarmentScene(scene: THREE.Object3D, tint?: string) {
+    const clonedScene = scene.clone(true);
+    clonedScene.traverse(node => {
+        const mesh = node as THREE.Mesh;
+        if (!mesh.isMesh) {
+            return;
+        }
+
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        if (Array.isArray(mesh.material)) {
+            mesh.material = mesh.material.map(material => cloneMaterialWithTint(material, tint));
+            return;
+        }
+
+        if (mesh.material) {
+            mesh.material = cloneMaterialWithTint(mesh.material, tint);
+        }
+    });
+
+    return clonedScene;
+}
 
 interface TransformState {
     gScale: number;
-    gPosX: number; gPosY: number; gPosZ: number;
-    gRotX: number; gRotY: number; gRotZ: number;
+    gPosX: number;
+    gPosY: number;
+    gPosZ: number;
+    gRotX: number;
+    gRotY: number;
+    gRotZ: number;
 }
+
 interface TransformSetters {
-    setGScale: (v: number) => void;
-    setGPosX: (v: number) => void; setGPosY: (v: number) => void; setGPosZ: (v: number) => void;
-    setGRotX: (v: number) => void; setGRotY: (v: number) => void; setGRotZ: (v: number) => void;
+    setGScale: (value: number) => void;
+    setGPosX: (value: number) => void;
+    setGPosY: (value: number) => void;
+    setGPosZ: (value: number) => void;
+    setGRotX: (value: number) => void;
+    setGRotY: (value: number) => void;
+    setGRotZ: (value: number) => void;
 }
 
 function DebugPanel({
-    state, setters, boneName,
-}: { state: TransformState; setters: TransformSetters; boneName: string }) {
-    // ── tiny helpers ──
-    const fmt = (v: number) => v.toFixed(3);
-    const fmtD = (v: number) => `${(v * 180 / Math.PI).toFixed(1)}°`;
-    const step = (set: (v: number) => void, cur: number, d: number) =>
-        () => set(parseFloat((cur + d).toFixed(4)));
+    state,
+    setters,
+    boneName,
+}: {
+    state: TransformState;
+    setters: TransformSetters;
+    boneName: string;
+}) {
+    const formatValue = (value: number) => value.toFixed(3);
+    const formatDegrees = (value: number) => `${((value * 180) / Math.PI).toFixed(1)} deg`;
+    const step = (setValue: (value: number) => void, currentValue: number, delta: number) =>
+        () => setValue(parseFloat((currentValue + delta).toFixed(4)));
+
     const resetAll = () => {
         setters.setGScale(1);
-        setters.setGPosX(0); setters.setGPosY(0); setters.setGPosZ(0);
-        setters.setGRotX(0); setters.setGRotY(0); setters.setGRotZ(0);
+        setters.setGPosX(0);
+        setters.setGPosY(0);
+        setters.setGPosZ(0);
+        setters.setGRotX(0);
+        setters.setGRotY(0);
+        setters.setGRotZ(0);
     };
 
-    // panel & row styles as plain objects for zero-dependency
-    const panel: React.CSSProperties = {
-        position: 'fixed', top: 12, right: 12,
-        background: 'rgba(8,8,12,0.93)',
+    const panelStyle: CSSProperties = {
+        position: 'fixed',
+        top: 12,
+        right: 12,
+        width: 280,
+        padding: '14px 16px',
+        borderRadius: 16,
         border: '1px solid rgba(255,255,255,0.09)',
-        borderRadius: 16, padding: '14px 16px', width: 280,
-        backdropFilter: 'blur(14px)', fontFamily: 'monospace',
-        fontSize: 11, color: '#e5e7eb', userSelect: 'none',
+        background: 'rgba(8,8,12,0.93)',
+        backdropFilter: 'blur(14px)',
         boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
+        fontFamily: 'monospace',
+        fontSize: 11,
+        color: '#e5e7eb',
         pointerEvents: 'auto',
+        userSelect: 'none',
     };
-    const label: React.CSSProperties = {
-        fontSize: 9, letterSpacing: 1.2, color: '#6b7280',
-        textTransform: 'uppercase', marginBottom: 3,
+
+    const labelStyle: CSSProperties = {
+        marginBottom: 3,
+        color: '#6b7280',
+        fontSize: 9,
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
     };
-    const row: React.CSSProperties = {
-        display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8,
+
+    const rowStyle: CSSProperties = {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        marginBottom: 8,
     };
-    const val: React.CSSProperties = {
-        minWidth: 52, textAlign: 'right', color: '#f9fafb', fontSize: 11,
+
+    const valueStyle: CSSProperties = {
+        minWidth: 52,
+        textAlign: 'right',
+        color: '#f9fafb',
+        fontSize: 11,
     };
-    const nudge = (label: string, onClick: () => void): React.ReactNode => (
-        <button key={label} onClick={onClick} style={{
-            padding: '2px 6px', fontSize: 10, cursor: 'pointer',
-            borderRadius: 5, border: '1px solid #374151',
-            background: '#111827', color: '#9ca3af',
-            transition: 'background .15s',
-        }}>{label}</button>
+
+    const renderNudge = (label: string, onClick: () => void) => (
+        <button
+            key={label}
+            onClick={onClick}
+            style={{
+                padding: '2px 6px',
+                fontSize: 10,
+                cursor: 'pointer',
+                borderRadius: 5,
+                border: '1px solid #374151',
+                background: '#111827',
+                color: '#9ca3af',
+            }}
+        >
+            {label}
+        </button>
     );
-    const slider = (
-        value: number, set: (v: number) => void,
-        min: number, max: number, step: number
+
+    const renderSlider = (
+        value: number,
+        setValue: (nextValue: number) => void,
+        min: number,
+        max: number,
+        stepValue: number,
     ) => (
-        <input type="range" min={min} max={max} step={step} value={value}
-            onChange={e => set(+e.target.value)}
+        <input
+            type="range"
+            min={min}
+            max={max}
+            step={stepValue}
+            value={value}
+            onChange={event => setValue(Number(event.target.value))}
             style={{ flex: 1, accentColor: '#6366f1', cursor: 'pointer' }}
         />
     );
 
-    // ── sections ──
-    type Row = { lbl: string; display: string; cur: number; set: (v: number) => void; min: number; max: number; step: number; delta: number };
-    const ROWS: Row[] = [
-        { lbl: 'Pos X', display: fmt(state.gPosX), cur: state.gPosX, set: setters.setGPosX, min: -2, max: 2, step: 0.001, delta: 0.01 },
-        { lbl: 'Pos Y', display: fmt(state.gPosY), cur: state.gPosY, set: setters.setGPosY, min: -2, max: 2, step: 0.001, delta: 0.01 },
-        { lbl: 'Pos Z', display: fmt(state.gPosZ), cur: state.gPosZ, set: setters.setGPosZ, min: -2, max: 2, step: 0.001, delta: 0.01 },
-        { lbl: 'Rot X', display: fmtD(state.gRotX), cur: state.gRotX, set: setters.setGRotX, min: -Math.PI, max: Math.PI, step: 0.01, delta: Math.PI / 16 },
-        { lbl: 'Rot Y', display: fmtD(state.gRotY), cur: state.gRotY, set: setters.setGRotY, min: -Math.PI, max: Math.PI, step: 0.01, delta: Math.PI / 16 },
-        { lbl: 'Rot Z', display: fmtD(state.gRotZ), cur: state.gRotZ, set: setters.setGRotZ, min: -Math.PI, max: Math.PI, step: 0.01, delta: Math.PI / 16 },
+    const rows = [
+        { label: 'Pos X', display: formatValue(state.gPosX), current: state.gPosX, set: setters.setGPosX, min: -2, max: 2, step: 0.001, delta: 0.01 },
+        { label: 'Pos Y', display: formatValue(state.gPosY), current: state.gPosY, set: setters.setGPosY, min: -2, max: 2, step: 0.001, delta: 0.01 },
+        { label: 'Pos Z', display: formatValue(state.gPosZ), current: state.gPosZ, set: setters.setGPosZ, min: -2, max: 2, step: 0.001, delta: 0.01 },
+        { label: 'Rot X', display: formatDegrees(state.gRotX), current: state.gRotX, set: setters.setGRotX, min: -Math.PI, max: Math.PI, step: 0.01, delta: Math.PI / 16 },
+        { label: 'Rot Y', display: formatDegrees(state.gRotY), current: state.gRotY, set: setters.setGRotY, min: -Math.PI, max: Math.PI, step: 0.01, delta: Math.PI / 16 },
+        { label: 'Rot Z', display: formatDegrees(state.gRotZ), current: state.gRotZ, set: setters.setGRotZ, min: -Math.PI, max: Math.PI, step: 0.01, delta: Math.PI / 16 },
     ];
 
     return (
         <Html prepend zIndexRange={[200, 0]} style={{ pointerEvents: 'none' }}>
-            <div style={panel}>
-                {/* Header */}
+            <div style={panelStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <span style={{ color: '#818cf8', fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>
-                        👕 GARMENT DEBUG
+                        GARMENT DEBUG
                     </span>
-                    <button onClick={resetAll} style={{
-                        padding: '2px 8px', fontSize: 9, cursor: 'pointer',
-                        borderRadius: 5, border: '1px solid #374151',
-                        background: '#1f2937', color: '#9ca3af',
-                    }}>RESET ALL</button>
+                    <button
+                        onClick={resetAll}
+                        style={{
+                            padding: '2px 8px',
+                            fontSize: 9,
+                            cursor: 'pointer',
+                            borderRadius: 5,
+                            border: '1px solid #374151',
+                            background: '#1f2937',
+                            color: '#9ca3af',
+                        }}
+                    >
+                        RESET ALL
+                    </button>
                 </div>
 
-                {/* Bone name */}
                 <div style={{ marginBottom: 10, color: '#6b7280', fontSize: 9 }}>
                     BONE:{' '}
                     <span style={{ color: boneName ? '#34d399' : '#f87171' }}>
-                        {boneName || '⚠ not found'}
+                        {boneName || 'not found'}
                     </span>
                 </div>
 
-                {/* Scale - log slider */}
                 <div style={{ marginBottom: 10 }}>
-                    <div style={label}>Scale <span style={{ color: '#f9fafb' }}>{state.gScale}</span></div>
-                    <div style={row}>
-                        {[0.001, 0.01, 0.1, 1, 10].map(p =>
-                            <button key={p} onClick={() => setters.setGScale(p)} style={{
-                                padding: '2px 5px', fontSize: 9, cursor: 'pointer',
-                                borderRadius: 5, border: state.gScale === p ? '1px solid #6366f1' : '1px solid #374151',
-                                background: state.gScale === p ? '#312e81' : '#111827',
-                                color: state.gScale === p ? '#a5b4fc' : '#9ca3af',
-                            }}>×{p}</button>
-                        )}
+                    <div style={labelStyle}>
+                        Scale <span style={{ color: '#f9fafb' }}>{state.gScale}</span>
                     </div>
-                    <input type="range" min={-3} max={1} step={0.001}
+                    <div style={rowStyle}>
+                        {[0.001, 0.01, 0.1, 1, 10].map(preset => (
+                            <button
+                                key={preset}
+                                onClick={() => setters.setGScale(preset)}
+                                style={{
+                                    padding: '2px 5px',
+                                    fontSize: 9,
+                                    cursor: 'pointer',
+                                    border: state.gScale === preset ? '1px solid #6366f1' : '1px solid #374151',
+                                    borderRadius: 5,
+                                    background: state.gScale === preset ? '#312e81' : '#111827',
+                                    color: state.gScale === preset ? '#a5b4fc' : '#9ca3af',
+                                }}
+                            >
+                                x{preset}
+                            </button>
+                        ))}
+                    </div>
+                    <input
+                        type="range"
+                        min={-3}
+                        max={1}
+                        step={0.001}
                         value={Math.log10(Math.max(state.gScale, 0.0001))}
-                        onChange={e => setters.setGScale(parseFloat(Math.pow(10, +e.target.value).toPrecision(4)))}
+                        onChange={event =>
+                            setters.setGScale(
+                                parseFloat(Math.pow(10, Number(event.target.value)).toPrecision(4)),
+                            )
+                        }
                         style={{ width: '100%', marginTop: 4, accentColor: '#6366f1' }}
                     />
                 </div>
 
-                {/* Position + Rotation rows */}
-                {ROWS.map(r => (
-                    <div key={r.lbl} style={{ marginBottom: 7 }}>
-                        <div style={label}>{r.lbl} <span style={{ color: '#f9fafb' }}>{r.display}</span></div>
-                        <div style={row}>
-                            {nudge('−−', step(r.set, r.cur, -r.delta * 2))}
-                            {nudge('−', step(r.set, r.cur, -r.delta))}
-                            {slider(r.cur, r.set, r.min, r.max, r.step)}
-                            {nudge('+', step(r.set, r.cur, r.delta))}
-                            {nudge('++', step(r.set, r.cur, r.delta * 2))}
-                            <span style={val}>{r.display}</span>
+                {rows.map(row => (
+                    <div key={row.label} style={{ marginBottom: 7 }}>
+                        <div style={labelStyle}>
+                            {row.label} <span style={{ color: '#f9fafb' }}>{row.display}</span>
+                        </div>
+                        <div style={rowStyle}>
+                            {renderNudge('--', step(row.set, row.current, -row.delta * 2))}
+                            {renderNudge('-', step(row.set, row.current, -row.delta))}
+                            {renderSlider(row.current, row.set, row.min, row.max, row.step)}
+                            {renderNudge('+', step(row.set, row.current, row.delta))}
+                            {renderNudge('++', step(row.set, row.current, row.delta * 2))}
+                            <span style={valueStyle}>{row.display}</span>
                         </div>
                     </div>
                 ))}
@@ -195,17 +327,28 @@ function DebugPanel({
     );
 }
 
-// ─── Placeholder (no modelUrl yet) ────────────────────────────────────────────
-
 function PlaceholderAvatar() {
     const ref = useRef<THREE.Mesh>(null);
-    useFrame((_, dt) => { if (ref.current) ref.current.rotation.y += dt * 0.1; });
+
+    useFrame((_, delta) => {
+        if (ref.current) {
+            ref.current.rotation.y += delta * 0.1;
+        }
+    });
+
     return (
         <Float speed={1.5} rotationIntensity={0.5} floatIntensity={1}>
             <mesh ref={ref} scale={1.2}>
                 <capsuleGeometry args={[0.5, 1.5, 4, 16]} />
-                <MeshDistortMaterial color="#4F46E5" attach="material"
-                    distort={0.2} speed={2} roughness={0.2} metalness={0.8} wireframe />
+                <MeshDistortMaterial
+                    attach="material"
+                    color="#4F46E5"
+                    distort={0.2}
+                    speed={2}
+                    roughness={0.2}
+                    metalness={0.8}
+                    wireframe
+                />
             </mesh>
             <mesh position={[0, 1.2, 0]}>
                 <sphereGeometry args={[0.4, 32, 32]} />
@@ -215,24 +358,37 @@ function PlaceholderAvatar() {
     );
 }
 
-// ─── Core loader ──────────────────────────────────────────────────────────────
-
 function LoadedAvatar({
-    url, garmentUrl,
-    height = 170, weight = 70, bodyType = 'regular',
-    animation = 'idle', showShirt = false,
+    url,
+    garmentUrl,
+    garmentTint,
+    height = 170,
+    weight = 70,
+    bodyType = 'regular',
+    muscularity = 50,
+    bodyFatPercentage = 20,
+    animation = 'idle',
+    showGarment = false,
+    showGarmentDebug = false,
+    applyLiveShape = false,
 }: {
-    url: string; garmentUrl: string;
-    height: number; weight: number; bodyType: string;
-    animation?: string; showShirt?: boolean;
+    url: string;
+    garmentUrl: string;
+    garmentTint?: string;
+    height: number;
+    weight: number;
+    bodyType: string;
+    muscularity: number;
+    bodyFatPercentage: number;
+    animation?: string;
+    showGarment?: boolean;
+    showGarmentDebug?: boolean;
+    applyLiveShape?: boolean;
 }) {
-    // ── GLTF loads — explicit variable names to prevent aliasing ──────────
     const avatarGltf = useGLTF(url);
     const garmentGltf = useGLTF(garmentUrl);
-
     const { actions, names } = useAnimations(avatarGltf.animations, avatarGltf.scene);
 
-    // ── Transform state ───────────────────────────────────────────────────
     const [gScale, setGScale] = useState(1);
     const [gPosX, setGPosX] = useState(0);
     const [gPosY, setGPosY] = useState(0);
@@ -241,81 +397,106 @@ function LoadedAvatar({
     const [gRotY, setGRotY] = useState(0);
     const [gRotZ, setGRotZ] = useState(0);
 
-    // ── Spine bone (memoised — only changes when the avatar scene changes) ──
     const spineAnchor = useMemo(() => findSpineAnchor(avatarGltf.scene), [avatarGltf.scene]);
 
-    // ── Animation crossfade ───────────────────────────────────────────────
     useEffect(() => {
-        if (!actions || Object.keys(actions).length === 0) return;
-        Object.values(actions).forEach(a => a?.fadeOut(0.4));
-        const target = actions[animation] ?? actions[names[0]];
-        target?.reset().fadeIn(0.4).play();
+        if (!actions || Object.keys(actions).length === 0) {
+            return;
+        }
+
+        Object.values(actions).forEach(action => action?.fadeOut(0.4));
+        const targetAction = actions[animation] ?? actions[names[0]];
+        targetAction?.reset().fadeIn(0.4).play();
     }, [animation, actions, names]);
 
-    // ── Procedural animation fallback (Breathing) ─────────────────────────
-    useFrame((state) => {
+    useFrame(state => {
         const hasActions = actions && Object.keys(actions).length > 0;
         if (!hasActions && spineAnchor) {
-            const t = state.clock.getElapsedTime();
-            // Subtle breathing effect on the spine
-            spineAnchor.rotation.x = Math.sin(t * 1.5) * 0.02;
-            spineAnchor.scale.setScalar(1 + Math.sin(t * 1.5) * 0.005);
+            const time = state.clock.getElapsedTime();
+            spineAnchor.rotation.x = Math.sin(time * 1.5) * 0.02;
+            spineAnchor.scale.setScalar(1 + Math.sin(time * 1.5) * 0.005);
         }
     });
 
-    // ── Morph targets ─────────────────────────────────────────────────────
     useEffect(() => {
-        avatarGltf.scene.traverse(child => {
-            const m = child as THREE.Mesh;
-            if (!m.isMesh || !m.morphTargetDictionary || !m.morphTargetInfluences) return;
-            const set = (k: string, v: number) => {
-                const i = m.morphTargetDictionary![k];
-                if (i !== undefined) m.morphTargetInfluences![i] = v;
-            };
-            set('Fat', Math.min(1, Math.max(0, (weight - 70) / 50)));
-            set('Muscular', bodyType === 'athletic' ? 1 : 0);
-            set('Tall', Math.min(1, Math.max(0, (height - 170) / 30)));
-        });
-    }, [avatarGltf.scene, height, weight, bodyType]);
+        if (!applyLiveShape) {
+            return;
+        }
 
-    // ── Garment scene — clone once so we don't mutate the shared cache ────
+        const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+        avatarGltf.scene.traverse(child => {
+            const mesh = child as THREE.Mesh;
+            if (!mesh.isMesh || !mesh.morphTargetDictionary || !mesh.morphTargetInfluences) {
+                return;
+            }
+
+            const setMorph = (key: string, value: number) => {
+                const morphIndex = mesh.morphTargetDictionary![key];
+                if (morphIndex !== undefined) {
+                    mesh.morphTargetInfluences![morphIndex] = value;
+                }
+            };
+
+            const fatFromWeight = clamp01((weight - 70) / 50);
+            const fatFromComposition = clamp01((bodyFatPercentage - 10) / 30);
+            const muscularFromBodyType =
+                bodyType === 'athletic' ? 0.65 :
+                bodyType === 'slim' ? 0.25 :
+                bodyType === 'curvy' ? 0.35 :
+                0.45;
+            const muscularFromComposition = clamp01(muscularity / 100);
+            const tallFromHeight = clamp01((height - 170) / 30);
+
+            const fatMorph = clamp01(fatFromWeight * 0.35 + fatFromComposition * 0.65);
+            const muscularMorph = clamp01(muscularFromBodyType * 0.25 + muscularFromComposition * 0.75);
+
+            setMorph('Fat', fatMorph);
+            setMorph('Muscular', muscularMorph);
+            setMorph('Tall', tallFromHeight);
+        });
+    }, [applyLiveShape, avatarGltf.scene, height, weight, bodyType, muscularity, bodyFatPercentage]);
+
     const garmentScene = useMemo(() => {
         if (garmentGltf.scene === avatarGltf.scene) {
-            console.error('[AvatarViewer] garmentGltf.scene === avatarGltf.scene — URL collision?',
-                '\n  avatar:', url, '\n  garment:', garmentUrl);
+            console.error(
+                '[AvatarViewer] garment scene collided with avatar scene',
+                '\n  avatar:',
+                url,
+                '\n  garment:',
+                garmentUrl,
+            );
             return null;
         }
-        return garmentGltf.scene.clone(true);
-    }, [garmentGltf.scene, avatarGltf.scene, url, garmentUrl]);
+
+        return cloneGarmentScene(garmentGltf.scene, garmentTint);
+    }, [garmentGltf.scene, avatarGltf.scene, garmentTint, url, garmentUrl]);
 
     return (
         <>
-            {/* Avatar body */}
             <primitive object={avatarGltf.scene} />
 
-            {/* Garment — portaled into the spine bone */}
-            {showShirt && garmentScene && (
+            {showGarment && garmentScene && (
                 <>
-                    {spineAnchor
-                        ? createPortal(
+                    {spineAnchor ? (
+                        createPortal(
                             <primitive
                                 object={garmentScene}
                                 position={[gPosX, gPosY, gPosZ]}
                                 rotation={[gRotX, gRotY, gRotZ]}
                                 scale={gScale}
                             />,
-                            spineAnchor
+                            spineAnchor,
                         )
-                        : /* no bone found — render in world space as fallback */
+                    ) : (
                         <primitive
                             object={garmentScene}
                             position={[gPosX, gPosY, gPosZ]}
                             rotation={[gRotX, gRotY, gRotZ]}
                             scale={gScale}
                         />
-                    }
+                    )}
 
-                    {/* Diagnostic: red sphere when no bone was found */}
                     {!spineAnchor && (
                         <mesh position={[0, 1, 0]}>
                             <sphereGeometry args={[0.08, 12, 12]} />
@@ -323,21 +504,22 @@ function LoadedAvatar({
                         </mesh>
                     )}
 
-                    <DebugPanel
-                        state={{ gScale, gPosX, gPosY, gPosZ, gRotX, gRotY, gRotZ }}
-                        setters={{ setGScale, setGPosX, setGPosY, setGPosZ, setGRotX, setGRotY, setGRotZ }}
-                        boneName={spineAnchor?.name ?? ''}
-                    />
+                    {showGarmentDebug && (
+                        <DebugPanel
+                            state={{ gScale, gPosX, gPosY, gPosZ, gRotX, gRotY, gRotZ }}
+                            setters={{ setGScale, setGPosX, setGPosY, setGPosZ, setGRotX, setGRotY, setGRotZ }}
+                            boneName={spineAnchor?.name ?? ''}
+                        />
+                    )}
                 </>
             )}
         </>
     );
 }
 
-// ─── Error fallback ───────────────────────────────────────────────────────────
-
 function AvatarErrorFallback({ error }: FallbackProps) {
     console.error('[AvatarViewer] GLB error:', error);
+
     return (
         <mesh scale={1.2}>
             <capsuleGeometry args={[0.5, 1.5, 4, 32]} />
@@ -346,29 +528,38 @@ function AvatarErrorFallback({ error }: FallbackProps) {
     );
 }
 
-// ─── Public component ─────────────────────────────────────────────────────────
-
 export default function AvatarViewer({
     modelUrl,
-    height, weight, bodyType, animation,
-    showShirt,
-    garmentUrl = '/models/garments/t-shirt.glb',
+    renderMode = 'preview',
+    height,
+    weight,
+    bodyType,
+    muscularity,
+    bodyFatPercentage,
+    animation,
+    showGarment = false,
+    garmentUrl = DEFAULT_GARMENT_URL,
+    garmentTint,
+    showGarmentDebug = false,
 }: AvatarViewerProps) {
     return (
-        // key forces full teardown + remount whenever the model URL changes,
-        // so useGLTF always loads the correct new model from scratch.
-        <group key={modelUrl ?? '__placeholder__'} position={[0, -0.5, 0]}>
+        <group key={`${renderMode}:${modelUrl ?? '__placeholder__'}`} position={[0, -0.5, 0]}>
             {modelUrl ? (
-                <ErrorBoundary key={modelUrl} FallbackComponent={AvatarErrorFallback}>
+                <ErrorBoundary key={`${renderMode}:${modelUrl}`} FallbackComponent={AvatarErrorFallback}>
                     <Suspense fallback={<PlaceholderAvatar />}>
                         <LoadedAvatar
                             url={modelUrl}
                             garmentUrl={garmentUrl}
+                            garmentTint={garmentTint}
                             height={height ?? 170}
                             weight={weight ?? 70}
                             bodyType={bodyType ?? 'regular'}
+                            muscularity={muscularity ?? 50}
+                            bodyFatPercentage={bodyFatPercentage ?? 20}
                             animation={animation}
-                            showShirt={showShirt}
+                            showGarment={showGarment}
+                            showGarmentDebug={showGarmentDebug}
+                            applyLiveShape={renderMode === 'preview'}
                         />
                     </Suspense>
                 </ErrorBoundary>
@@ -379,7 +570,6 @@ export default function AvatarViewer({
     );
 }
 
-// Pre-warm GLTF cache for Studio's most common models
 useGLTF.preload('/models/Male.glb');
 useGLTF.preload('/models/Female.glb');
-useGLTF.preload('/models/garments/t-shirt.glb');
+useGLTF.preload(DEFAULT_GARMENT_URL);

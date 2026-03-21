@@ -5,9 +5,9 @@ using ApplicationAuth.DAL.Abstract;
 using ApplicationAuth.Domain.Entities.Identity;
 using ApplicationAuth.SharedModels.ResponseModels.Session;
 
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System;
 using System.Collections.Generic;
@@ -20,21 +20,30 @@ namespace ApplicationAuth.Features.Account.Shared
 {
     public class JWTService : IJWTService
     {
-        private const int _cookiesLifeTime = 1440; //24hours
-
         private readonly UserManager<ApplicationUser> _userManager = null;
         private readonly IHashUtility _hashService = null;
         private readonly IDataContext _unitOfWork;
-        private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly string _issuer;
+        private readonly string _audience;
+        private readonly string _signingKey;
+        private readonly int _accessTokenLifetimeDays;
+        private readonly int _refreshTokenLifetimeDays;
         public JWTService(UserManager<ApplicationUser> userManager,
             IHashUtility hashService,
             IDataContext unitOfWork,
-            IHttpContextAccessor httpContextAccessor)
+            IConfiguration configuration)
         {
             _userManager = userManager;
             _hashService = hashService;
             _unitOfWork = unitOfWork;
-            _httpContextAccessor = httpContextAccessor;
+            _issuer = configuration["Jwt:Issuer"]?.Trim() ?? AuthOptions.DefaultIssuer;
+            _audience = configuration["Jwt:Audience"]?.Trim() ?? AuthOptions.DefaultAudience;
+            _signingKey = configuration["Jwt:SigningKey"]?.Trim()
+                ?? throw new InvalidOperationException("JWT signing key is not configured.");
+            _accessTokenLifetimeDays = configuration.GetValue<int?>("Jwt:AccessTokenLifetimeDays")
+                ?? AuthOptions.DefaultAccessTokenLifetimeDays;
+            _refreshTokenLifetimeDays = configuration.GetValue<int?>("Jwt:RefreshTokenLifetimeDays")
+                ?? AuthOptions.DefaultRefreshTokenLifetimeDays;
         }
 
         public async Task<ClaimsIdentity> GetIdentity(ApplicationUser user, bool isRefreshToken)
@@ -60,13 +69,12 @@ namespace ApplicationAuth.Features.Account.Shared
         public JwtSecurityToken CreateToken(DateTime now, ClaimsIdentity identity, DateTime lifetime)
         {
             return new JwtSecurityToken(
-                issuer: AuthOptions.ISSUER,
-                audience: AuthOptions.AUDIENCE,
+                issuer: _issuer,
+                audience: _audience,
                 notBefore: now,
                 claims: identity.Claims,
                 expires: lifetime,
-                //signingCredentials: AuthOptions.GetSigningCredentials()
-                signingCredentials: new SigningCredentials(AuthOptions.GetSymmetricSecurityKey(), SecurityAlgorithms.HmacSha256)
+                signingCredentials: AuthOptions.GetSigningCredentials(_signingKey)
                 );
         }
 
@@ -95,8 +103,10 @@ namespace ApplicationAuth.Features.Account.Shared
             if (accessIdentity == null || refreshIdentity == null)
                 throw new Exception("User not found");
 
-            var accessLifetime = accessTokenLifetime.HasValue && accessTokenLifetime.Value != 0 ? dateNow.Add(TimeSpan.FromSeconds(accessTokenLifetime.Value)) : dateNow.Add(TimeSpan.FromDays(AuthOptions.ACCESS_TOKEN_LIFETIME));
-            var refreshLifetime = dateNow.Add(TimeSpan.FromDays(AuthOptions.REFRESH_TOKEN_LIFETIME));
+            var accessLifetime = accessTokenLifetime.HasValue && accessTokenLifetime.Value != 0
+                ? dateNow.Add(TimeSpan.FromSeconds(accessTokenLifetime.Value))
+                : dateNow.Add(TimeSpan.FromDays(_accessTokenLifetimeDays));
+            var refreshLifetime = dateNow.Add(TimeSpan.FromDays(_refreshTokenLifetimeDays));
 
             var accessJwtToken = new JwtSecurityTokenHandler().WriteToken(CreateToken(dateNow, accessIdentity, accessLifetime));
             var refreshJwtToken = new JwtSecurityTokenHandler().WriteToken(CreateToken(dateNow, refreshIdentity, refreshLifetime));
@@ -152,33 +162,17 @@ namespace ApplicationAuth.Features.Account.Shared
                 Token = tokenResponseModel,
             };
 
-            _httpContextAccessor.HttpContext.Response.Cookies.Append(".AspNetCore.Application.Id", result.Token.AccessToken,
-            new CookieOptions
-            {
-                MaxAge = TimeSpan.FromMinutes(_cookiesLifeTime)
-            });
-
-            _httpContextAccessor.HttpContext.Response.Cookies.Append(".AspNetCore.Application.Id.Refresh", result.Token.RefreshToken,
-            new CookieOptions
-            {
-                MaxAge = TimeSpan.FromMinutes(_cookiesLifeTime)
-            });
-
-
             return result;
         }
 
-        public async Task ClearUserTokens(ApplicationUser user)
+        public Task ClearUserTokens(ApplicationUser user)
         {
             var tokens = user.Tokens.ToList();
 
             tokens.ForEach(x => _unitOfWork.Set<UserToken>().Remove(x));
 
             _unitOfWork.SaveChanges();
-
-            _httpContextAccessor.HttpContext.Response.Cookies.Delete(".AspNetCore.Application.Id");
-            _httpContextAccessor.HttpContext.Response.Cookies.Delete(".AspNetCore.Application.Id.Refresh");
-
+            return Task.CompletedTask;
         }
     }
 }

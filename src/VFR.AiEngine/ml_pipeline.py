@@ -3,7 +3,10 @@ import io
 import os
 os.environ['OMP_NUM_THREADS'] = '1'
 import logging
+import ipaddress
+import socket
 from typing import TYPE_CHECKING, Tuple, Any, Optional
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()  # reads .env locally; no-op when env vars are already injected by Aspire
@@ -26,6 +29,73 @@ from anthropometry import infer_measurement_targets
 from measurement_optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
 
 logger = logging.getLogger("AvatarML")
+
+PROFILE_OPTIMIZATION_WEIGHTS = {
+    "chest_cm": 1.0,
+    "waist_cm": 1.0,
+    "hips_cm": 1.0,
+    "shoulder_circumference_cm": 0.3,
+    "bicep_circumference_cm": 0.5,
+    "thigh_circumference_cm": 0.5,
+}
+
+
+def _clamp_float(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
+
+
+def normalize_proxy_slider(raw_value: Optional[float]) -> float:
+    if raw_value is None:
+        return 0.0
+
+    value = float(raw_value)
+    if value <= 0:
+        return 0.0
+    if value <= 1.0:
+        return _clamp_float(value, 0.0, 1.0)
+    return _clamp_float(value / 100.0, 0.0, 1.0)
+
+
+def calculate_proxy_targets(
+    exact_measurements: dict[str, float],
+    muscle_slider: Optional[float],
+    fat_slider: Optional[float],
+    gender: str,
+) -> dict[str, float]:
+    chest_cm = float(exact_measurements.get("chest_cm", 0.0) or 0.0)
+    hips_cm = float(exact_measurements.get("hips_cm", 0.0) or 0.0)
+    if chest_cm <= 0 or hips_cm <= 0:
+        return {}
+
+    gender_key = str(gender or "neutral").lower()
+    if gender_key not in {"male", "female", "neutral"}:
+        gender_key = "neutral"
+
+    muscle = normalize_proxy_slider(muscle_slider)
+    fat = normalize_proxy_slider(fat_slider)
+
+    if gender_key == "male":
+        base_shoulder = chest_cm * 1.15
+        target_shoulder = base_shoulder + muscle * chest_cm * 0.10 + fat * chest_cm * 0.03
+        target_bicep = chest_cm * (0.25 + muscle * 0.08 + fat * 0.02)
+        target_thigh = hips_cm * (0.54 + muscle * 0.05 + fat * 0.08)
+    elif gender_key == "female":
+        base_shoulder = chest_cm * 1.10
+        target_shoulder = base_shoulder + muscle * chest_cm * 0.07 + fat * chest_cm * 0.04
+        target_bicep = chest_cm * (0.21 + muscle * 0.05 + fat * 0.02)
+        target_thigh = hips_cm * (0.58 + muscle * 0.03 + fat * 0.10)
+    else:
+        base_shoulder = chest_cm * 1.125
+        target_shoulder = base_shoulder + muscle * chest_cm * 0.085 + fat * chest_cm * 0.035
+        target_bicep = chest_cm * (0.23 + muscle * 0.065 + fat * 0.02)
+        target_thigh = hips_cm * (0.56 + muscle * 0.04 + fat * 0.09)
+
+    return {
+        "shoulder_circumference_cm": target_shoulder,
+        "bicep_circumference_cm": target_bicep,
+        "thigh_circumference_cm": target_thigh,
+    }
+
 
 class AvatarMLPipeline:
     def __init__(self):
@@ -84,43 +154,73 @@ class AvatarMLPipeline:
     def _simulate_profile_betas(
         self, height_cm: float, weight_kg: float, body_type: str,
         chest: float = 0, waist: float = 0, hip: float = 0, shoulder: float = 0,
-        calf: float = 0, arm_length: float = 0, torso_length: float = 0, leg_length: float = 0
+        calf: float = 0, arm_length: float = 0, torso_length: float = 0, leg_length: float = 0,
     ) -> Any:
         """
         Conservative heuristic mapping of coarse metrics to SMPL-X shape betas.
 
-        SMPL-X betas are PCA coefficients, not semantic sliders such as
-        "shoulders", "waist", or "hips". Aggressive writes into higher beta
-        axes create non-human artifacts surprisingly often, so this fallback
-        keeps most of the signal in the first couple of dimensions and treats
-        body type as a light bias rather than a hard morph target.
+        Only body_type contributes semantic warm-start bias. Muscle and fat
+        composition are handled later as optimizer proxy targets instead of
+        directly perturbing the SMPL-X beta PCA axes.
         """
+        def _normalize_body_key(raw_body_type: str) -> str:
+            body_key = str(raw_body_type or "regular").lower()
+            body_aliases = {
+                "lean": "slim",
+                "average": "regular",
+                "normal": "regular",
+                "soft": "curvy",
+                "plus": "curvy",
+                "plus size": "curvy",
+                "plus-size": "curvy",
+                "plus_size": "curvy",
+                "stout": "curvy",
+            }
+            body_key = body_aliases.get(body_key, body_key)
+            if body_key not in {"slim", "regular", "athletic", "curvy"}:
+                body_key = "regular"
+            return body_key
+
         height_m = max(height_cm / 100.0, 1e-6)
         bmi = weight_kg / (height_m ** 2)
+        body_key = _normalize_body_key(body_type)
 
         betas = torch.zeros((1, 10), dtype=torch.float32, device=self.device)
 
+        semantic_beta_basis = torch.tensor(
+            [
+                [1.20, 0.10, 0.10, 0.22, 0.08, 0.06, 0.00, 0.00, 0.00, 0.00],
+                [0.24, -1.25, 0.82, 0.36, 0.16, 0.10, 0.05, 0.02, 0.00, 0.00],
+                [1.08, 0.94, -0.32, 0.30, 0.18, 0.12, 0.05, 0.00, 0.00, 0.00],
+            ],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        body_type_controls = {
+            "slim": (-0.65, -0.15, -0.55),
+            "regular": (0.00, 0.00, 0.00),
+            "athletic": (-0.08, 1.05, -0.30),
+            "curvy": (0.45, -0.14, 0.95),
+        }
+
+        semantic_controls = torch.tensor(
+            [body_type_controls[body_key]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        betas += torch.matmul(semantic_controls, semantic_beta_basis)
+
         # beta[0]: overall bulk. Keep this as the dominant heuristic signal.
         bmi_offset = (bmi - 21.0) / 3.5
-        betas[0, 0] = float(np.clip(bmi_offset, -1.75, 1.75))
+        betas[0, 0] += float(np.clip(bmi_offset, -1.75, 1.75)) * 0.75
 
         # beta[1]: very mild proportional bias only. Height itself is enforced
         # later during export, so we should not double-count it here.
         height_offset = (height_cm - 170.0) / 20.0
-        betas[0, 1] = float(np.clip(height_offset, -1.0, 1.0)) * 0.15
+        betas[0, 1] += float(np.clip(height_offset, -1.0, 1.0)) * 0.12
 
-        # Body type should bias leanness/bulk, not poke unpredictable PCA axes.
-        b_type = body_type.lower()
-        if b_type == 'slim':
-            betas[0, 0] -= 0.25
-        elif b_type == 'athletic':
-            betas[0, 0] -= 0.35
-            betas[0, 1] += 0.05
-        elif b_type == 'curvy' or b_type == 'plus':
-            betas[0, 0] += 0.5
-
-        # If coarse torso measurements are present, fold them into the same
-        # "overall bulk" axis instead of pretending beta[2..4] are semantic.
+        # Coarse torso measurements mainly refine the weight/roundness axes
+        # while leaving the higher-order PCA components conservative.
         bulk_signals = []
         if chest > 0:
             expected_chest = height_cm * 0.52
@@ -134,22 +234,50 @@ class AvatarMLPipeline:
 
         if bulk_signals:
             bulk_bias = float(np.clip(sum(bulk_signals) / len(bulk_signals), -0.4, 0.6))
-            betas[0, 0] += bulk_bias * 1.2
+            betas[0, 0] += bulk_bias * 0.9
+            betas[0, 1] += bulk_bias * 0.18
+            betas[0, 2] -= bulk_bias * 0.10
 
-        # Very mild proportion hints only when explicitly provided.
+        # Mild proportion hints only when explicitly provided.
         proportion_bias = 0.0
         if arm_length > 0:
             proportion_bias += np.clip((arm_length / max(height_cm, 1.0)) - 0.37, -0.05, 0.05)
         if leg_length > 0:
             proportion_bias += np.clip((leg_length / max(height_cm, 1.0)) - 0.495, -0.06, 0.06)
         if proportion_bias != 0.0:
-            betas[0, 1] += float(np.clip(proportion_bias, -0.08, 0.08))
+            proportion_bias = float(np.clip(proportion_bias, -0.08, 0.08))
+            betas[0, 1] += proportion_bias
+            betas[0, 4] += proportion_bias * 0.50
+            betas[0, 5] -= proportion_bias * 0.30
+
+        if shoulder > 0:
+            expected_shoulder = height_cm * 0.235
+            shoulder_bias = float(np.clip((shoulder - expected_shoulder) / max(expected_shoulder, 1.0), -0.2, 0.2))
+            betas[0, 1] -= shoulder_bias * 0.35
+            betas[0, 2] += shoulder_bias * 0.45
+            betas[0, 3] += shoulder_bias * 0.18
+
+        if calf > 0:
+            expected_calf = height_cm * 0.12
+            calf_bias = float(np.clip((calf - expected_calf) / max(expected_calf, 1.0), -0.2, 0.2))
+            betas[0, 0] += calf_bias * 0.18
+            betas[0, 5] += calf_bias * 0.25
+
+        if torso_length > 0:
+            expected_torso = height_cm * 0.315
+            torso_bias = float(np.clip((torso_length - expected_torso) / max(expected_torso, 1.0), -0.15, 0.15))
+            betas[0, 4] -= torso_bias * 0.18
+            betas[0, 5] -= torso_bias * 0.12
 
         betas.clamp_(-2.5, 2.5)
 
         logger.info(
-            f"Profile betas — h={height_cm}cm, w={weight_kg}kg, BMI={bmi:.1f}: "
-            f"{betas[0].tolist()}"
+            "Profile betas - h=%.1fcm, w=%.1fkg, BMI=%.1f, body=%s: %s",
+            height_cm,
+            weight_kg,
+            bmi,
+            body_key,
+            betas[0].tolist(),
         )
         return betas
 
@@ -162,8 +290,39 @@ class AvatarMLPipeline:
             from PIL import Image
             import numpy as np
 
+            parsed = urlparse(image_url)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                raise ValueError("Only absolute http(s) image URLs are allowed.")
+            if parsed.username or parsed.password:
+                raise ValueError("Credentialed image URLs are not allowed.")
+
+            addresses = {
+                addr_info[4][0]
+                for addr_info in socket.getaddrinfo(parsed.hostname, parsed.port, proto=socket.IPPROTO_TCP)
+            }
+            for address in addresses:
+                ip = ipaddress.ip_address(address)
+                if (
+                    ip.is_private
+                    or ip.is_loopback
+                    or ip.is_link_local
+                    or ip.is_multicast
+                    or ip.is_reserved
+                    or ip.is_unspecified
+                ):
+                    raise ValueError(f"Blocked non-public image host: {address}")
+
             logger.info(f"Extracting skin color from {image_url}...")
-            response = requests.get(image_url, timeout=5)
+            response = requests.get(
+                image_url,
+                timeout=5,
+                allow_redirects=False,
+                headers={"User-Agent": "VFR-AiEngine/1.0"},
+            )
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "")
+            if not content_type.startswith("image/"):
+                raise ValueError(f"Expected image content type, got '{content_type or 'unknown'}'")
             img = Image.open(io.BytesIO(response.content)).convert("RGB")
             img.thumbnail((100, 100)) # resize for speed
             
@@ -448,12 +607,13 @@ class AvatarMLPipeline:
 
     def process_profile(
         self, user_id: str, height_cm: float, weight_kg: float, body_type: str, gender: str = 'neutral',
+        muscularity: float = 0, body_fat_percentage: float = 0,
         chest: float = 0, waist: float = 0, hip: float = 0, shoulder: float = 0, calf: float = 0,
         arm_length: float = 0, torso_length: float = 0, leg_length: float = 0, face_image_url: str = ""
-    ) -> str:
+    ) -> dict[str, Any]:
         """
         Main Pipeline Entrypoint for Parametric Generation.
-        Returns a public S3 URL.
+        Returns the generated public URL plus body measurements for Studio refinement.
         """
         try:
             logger.info(
@@ -478,6 +638,8 @@ class AvatarMLPipeline:
                 weight_kg=weight_kg,
                 body_type=body_type,
                 gender=gender,
+                muscularity=None,
+                body_fat_percentage=None,
                 overrides=user_measurement_overrides,
                 hints={
                     "shoulder_cm": shoulder,
@@ -485,6 +647,37 @@ class AvatarMLPipeline:
                     "torso_length_cm": torso_length,
                 },
             )
+
+            normalized_muscle_slider = normalize_proxy_slider(muscularity)
+            normalized_fat_slider = normalize_proxy_slider(body_fat_percentage)
+            proxy_targets = calculate_proxy_targets(
+                exact_measurements=target_measurements,
+                muscle_slider=normalized_muscle_slider,
+                fat_slider=normalized_fat_slider,
+                gender=gender,
+            )
+            if proxy_targets:
+                target_measurements = {
+                    **target_measurements,
+                    **proxy_targets,
+                }
+                measurement_weights = {
+                    **measurement_weights,
+                    **{
+                        measurement_name: PROFILE_OPTIMIZATION_WEIGHTS[measurement_name]
+                        for measurement_name in proxy_targets
+                        if measurement_name in PROFILE_OPTIMIZATION_WEIGHTS
+                    },
+                }
+                measurement_sources = {
+                    **measurement_sources,
+                    **{
+                        measurement_name: (
+                            f"proxy_targets(muscle={normalized_muscle_slider:.3f},fat={normalized_fat_slider:.3f})"
+                        )
+                        for measurement_name in proxy_targets
+                    },
+                }
 
             heuristic_betas = self._simulate_profile_betas(
                 height_cm,
@@ -501,22 +694,34 @@ class AvatarMLPipeline:
             )
 
             logger.info(
-                "Anthropometric targets for optimization: %s (sources=%s, weights=%s)",
+                "Anthropometric targets for optimization: %s (sources=%s)",
                 target_measurements,
                 measurement_sources,
-                measurement_weights,
             )
 
             optimization_targets = {
                 measurement_name: target_value
                 for measurement_name, target_value in target_measurements.items()
-                if measurement_name in {"chest_cm", "waist_cm", "hips_cm"}
+                if measurement_name in {
+                    "chest_cm",
+                    "waist_cm",
+                    "hips_cm",
+                    "shoulder_circumference_cm",
+                    "bicep_circumference_cm",
+                    "thigh_circumference_cm",
+                }
             }
             optimization_weights = {
-                measurement_name: measurement_weights[measurement_name]
+                measurement_name: PROFILE_OPTIMIZATION_WEIGHTS.get(
+                    measurement_name,
+                    measurement_weights.get(measurement_name, 1.0),
+                )
                 for measurement_name in optimization_targets
-                if measurement_name in measurement_weights
             }
+            logger.info(
+                "Optimization loss weights: %s",
+                optimization_weights,
+            )
 
             approximate_hint_fields = []
             if shoulder > 0:
@@ -540,50 +745,52 @@ class AvatarMLPipeline:
                     num_iterations=optimizer_iterations,
                     target_height_cm=height_cm,
                     initial_betas=heuristic_betas.detach().cpu().numpy(),
+                    shape_preservation_weight=0.35,
                     measurement_weights=optimization_weights,
                     device=str(self.device)
                 )
                 betas = torch.tensor(optimized_betas, dtype=torch.float32, device=self.device)
-
-                smpl_model = self._get_smpl_model(gender)
-                if smpl_model is not None:
-                    with torch.no_grad():
-                        debug_output = smpl_model(betas=betas, return_verts=True)
-                    debug_vertices, debug_joints, warp_scales = apply_proportion_warp(
-                        vertices=debug_output.vertices,
-                        joints=debug_output.joints,
-                        parents=smpl_model.parents,
-                        weights=smpl_model.lbs_weights,
-                        target_measurements=target_measurements,
-                        target_height_cm=height_cm,
-                    )
-                    measured = calculate_measurements(
-                        vertices=debug_vertices,
-                        joints=debug_joints,
-                        target_height_cm=height_cm,
-                    )
-                    measured_summary = {
-                        measurement_name: round(
-                            float(measured[measurement_name].detach().cpu().item()),
-                            2,
-                        )
-                        for measurement_name in target_measurements
-                        if measurement_name in measured
-                    }
-                    if "height_cm" in measured:
-                        measured_summary["height_cm"] = round(
-                            float(measured["height_cm"].detach().cpu().item()),
-                            2,
-                        )
-                    if warp_scales:
-                        logger.info("Applied debug proportion warp: %s", warp_scales)
-                    logger.info(
-                        "Post-optimization height-normalized measurements: %s",
-                        measured_summary,
-                    )
             except Exception as e:
                 logger.warning(f"Measurement optimization failed ({e}), falling back to heuristic betas.")
                 betas = heuristic_betas
+
+            measured_summary: dict[str, float] = {}
+            smpl_model = self._get_smpl_model(gender)
+            if smpl_model is not None:
+                with torch.no_grad():
+                    measured_output = smpl_model(betas=betas, return_verts=True)
+                measured_vertices, measured_joints, warp_scales = apply_proportion_warp(
+                    vertices=measured_output.vertices,
+                    joints=measured_output.joints,
+                    parents=smpl_model.parents,
+                    weights=smpl_model.lbs_weights,
+                    target_measurements=target_measurements,
+                    target_height_cm=height_cm,
+                )
+                measured = calculate_measurements(
+                    vertices=measured_vertices,
+                    joints=measured_joints,
+                    target_height_cm=height_cm,
+                )
+                measured_summary = {
+                    measurement_name: round(
+                        float(measured[measurement_name].detach().cpu().item()),
+                        2,
+                    )
+                    for measurement_name in target_measurements
+                    if measurement_name in measured
+                }
+                if "height_cm" in measured:
+                    measured_summary["height_cm"] = round(
+                        float(measured["height_cm"].detach().cpu().item()),
+                        2,
+                    )
+                if warp_scales:
+                    logger.info("Applied debug proportion warp: %s", warp_scales)
+                logger.info(
+                    "Post-optimization height-normalized measurements: %s",
+                    measured_summary,
+                )
 
             # Extract skin color if face image provided
             skin_color = self._extract_skin_color(face_image_url)
@@ -599,7 +806,6 @@ class AvatarMLPipeline:
             # Delete the previous unique file(s) for this user to save space
             delete_old_user_avatars(safe_user_id)
 
-            smpl_model = self._get_smpl_model(gender)
             if smpl_model is not None:
                 logger.info(f"Using real SMPL-X pipeline (gender={gender})...")
                 target_height_m = height_cm / 100.0
@@ -615,7 +821,15 @@ class AvatarMLPipeline:
                 raise RuntimeError(f"SMPL-X unavailable for gender='{gender}' and neutral fallback also failed.")
 
             logger.info(f"Avatar available at: {public_url}")
-            return public_url
+            return {
+                "model_url": public_url,
+                "measurements": measured_summary,
+                "targets": {
+                    measurement_name: round(float(target_value), 2)
+                    for measurement_name, target_value in target_measurements.items()
+                },
+                "measurement_sources": measurement_sources,
+            }
 
         except Exception as e:
             logger.error(f"Profile Pipeline failed: {str(e)}")
@@ -644,11 +858,13 @@ def run_avatar_generation(image_bytes: bytes) -> str:
 
 def run_avatar_generation_from_profile(
     user_id: str, height: float, weight: float, body_type: str, gender: str = 'neutral',
+    muscularity: float = 0, body_fat_percentage: float = 0,
     chest: float = 0, waist: float = 0, hip: float = 0, shoulder: float = 0, calf: float = 0,
     arm_length: float = 0, torso_length: float = 0, leg_length: float = 0, face_image_url: str = ""
-) -> str:
+) -> dict[str, Any]:
     """Wrapper for generating avatar purely from profile parameters"""
     return pipeline_instance.process_profile(
         user_id, height, weight, body_type, gender,
+        muscularity, body_fat_percentage,
         chest, waist, hip, shoulder, calf, arm_length, torso_length, leg_length, face_image_url
     )

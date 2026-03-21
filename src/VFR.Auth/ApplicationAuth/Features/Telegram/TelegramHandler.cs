@@ -2,7 +2,6 @@ using ApplicationAuth.Common.Exceptions;
 using ApplicationAuth.Common.Extensions;
 using ApplicationAuth.DAL.Abstract;
 using ApplicationAuth.Domain.Entities.Telegram;
-using ApplicationAuth.Features.Telegram.Models;
 
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -29,7 +28,7 @@ public class TelegramHandler : ITelegramService,
         _dataContext = dataContext;
     }
 
-    public Task<TelegramMessageResponseModel> TestInsert(string text)
+    public Task<TelegramMessageResponse> TestInsert(string text)
     {
         // Old wrapper for TestInsert
         var message = new TelegramMessage
@@ -42,16 +41,15 @@ public class TelegramHandler : ITelegramService,
         _dataContext.Set<TelegramMessage>().Add(message);
         _dataContext.SaveChanges();
 
-        return Task.FromResult(new TelegramMessageResponseModel
-        {
-            Id = message.Id,
-            Message = message.Message,
-            SenderId = message.UserToken,
-            SentAt = message.DateTime.ToISO()
-        });
+        return Task.FromResult(new TelegramMessageResponse(
+            message.Id,
+            message.Message,
+            message.UserToken,
+            message.DateTime.ToISO()
+        ));
     }
 
-    public Task<TelegramMessageResponseModel> SaveMessage(TelegramMessageRequestModel model)
+    public Task<TelegramMessageResponse> SaveMessage(TelegramMessageRequest model)
     {
         var message = new TelegramMessage
         {
@@ -63,13 +61,12 @@ public class TelegramHandler : ITelegramService,
         _dataContext.Set<TelegramMessage>().Add(message);
         _dataContext.SaveChanges();
 
-        return Task.FromResult(new TelegramMessageResponseModel
-        {
-            Id = message.Id,
-            Message = message.Message,
-            SenderId = message.UserToken,
-            SentAt = message.DateTime.ToISO()
-        });
+        return Task.FromResult(new TelegramMessageResponse(
+            message.Id,
+            message.Message,
+            message.UserToken,
+            message.DateTime.ToISO()
+        ));
     }
 
     public async Task<TelegramMessageResponse> Handle(SaveMessageMinimalCommand request, CancellationToken cancellationToken)
@@ -97,20 +94,19 @@ public class TelegramHandler : ITelegramService,
         return await Handle(new SaveMessageMinimalCommand(new TelegramMessageRequest(request.Text, "0")), cancellationToken);
     }
 
-    public Task<IEnumerable<TelegramMessageResponseModel>> GetMessagesByUserToken(string userToken)
+    public Task<IEnumerable<TelegramMessageResponse>> GetMessagesByUserToken(string userToken)
     {
         if (string.IsNullOrEmpty(userToken))
             throw new CustomException(HttpStatusCode.BadRequest, "userToken", "Invalid userToken value");
 
         var messages = _dataContext.Set<TelegramMessage>().Where(x => x.UserToken == userToken).ToList();
 
-        return Task.FromResult(messages.Select(x => new TelegramMessageResponseModel
-        {
-            Id = x.Id,
-            Message = x.Message,
-            SenderId = x.UserToken,
-            SentAt = x.DateTime.ToISO()
-        }));
+        return Task.FromResult(messages.Select(x => new TelegramMessageResponse(
+            x.Id,
+            x.Message,
+            x.UserToken,
+            x.DateTime.ToISO()
+        )));
     }
 
     public async Task<IEnumerable<TelegramMessageResponse>> Handle(GetMessagesMinimalQuery request, CancellationToken cancellationToken)
@@ -128,7 +124,7 @@ public class TelegramHandler : ITelegramService,
         ));
     }
 
-    private async Task<TelegramSticker> SaveStickerInternal(string fileUniqueId, string stickerId)
+    private Task<TelegramSticker> SaveStickerInternal(string fileUniqueId, string stickerId)
     {
         var sticker = new TelegramSticker
         {
@@ -140,27 +136,26 @@ public class TelegramHandler : ITelegramService,
 
         _dataContext.Set<TelegramSticker>().Add(sticker);
         _dataContext.SaveChanges();
-        return sticker;
+        return Task.FromResult(sticker);
     }
 
-    public Task<IEnumerable<TelegramStickerResponseModel>> GetTopStickers()
+    public Task<IEnumerable<TelegramStickerResponse>> GetTopStickers()
     {
         var stickers = _dataContext.Set<TelegramSticker>()
             .OrderByDescending(x => x.CountOfUsage)
             .Take(10)
             .ToList();
 
-        return Task.FromResult(stickers.Select(x => new TelegramStickerResponseModel
-        {
-            Id = x.Id,
-            StickerId = x.StickerId,
-            FileUniqueId = x.FileUniqueId,
-            CountOfUsage = x.CountOfUsage,
-            DateOfFirstUsage = x.DateTime.ToISO()
-        }));
+        return Task.FromResult(stickers.Select(x => new TelegramStickerResponse(
+            x.Id,
+            x.StickerId,
+            x.FileUniqueId,
+            x.CountOfUsage,
+            x.DateTime.ToISO()
+        )));
     }
 
-    public async Task<TelegramStickerResponseModel> SaveStickerRate(string fileUniqueId, string stickerId)
+    public async Task<TelegramStickerResponse> SaveStickerRate(string fileUniqueId, string stickerId)
     {
         if (string.IsNullOrEmpty(fileUniqueId))
             throw new CustomException(HttpStatusCode.BadRequest, "stickerId", "Invalid stickerId");
@@ -178,13 +173,12 @@ public class TelegramHandler : ITelegramService,
             _dataContext.SaveChanges();
         }
 
-        return new TelegramStickerResponseModel
-        {
-            Id = sticker.Id,
-            StickerId = sticker.StickerId,
-            FileUniqueId = sticker.FileUniqueId,
-            CountOfUsage = sticker.CountOfUsage,
-            DateOfFirstUsage = sticker.DateTime.ToISO()
-        };
+        return new TelegramStickerResponse(
+            sticker.Id,
+            sticker.StickerId,
+            sticker.FileUniqueId,
+            sticker.CountOfUsage,
+            sticker.DateTime.ToISO()
+        );
     }
 }

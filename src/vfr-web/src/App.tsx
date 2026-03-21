@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  createRoutesFromElements,
+  Navigate,
+  Route,
+  RouterProvider,
+} from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 // Auth Pages
@@ -69,9 +75,40 @@ const AuthGuard = ({ children }: { children: ReactNode }) => {
   return <>{children}</>;
 };
 
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
+      {/* Unauthenticated / Public Routes */}
+      <Route path="/" element={<AuthGuard><PublicLayout><Home /></PublicLayout></AuthGuard>} />
+      <Route path="/technology" element={<AuthGuard><PublicLayout><Technology /></PublicLayout></AuthGuard>} />
+      <Route path="/pricing" element={<AuthGuard><PublicLayout><Pricing /></PublicLayout></AuthGuard>} />
+      <Route path="/login" element={<AuthGuard><Login /></AuthGuard>} />
+      <Route path="/register" element={<AuthGuard><Register /></AuthGuard>} />
+      <Route path="/verify-email" element={<AuthGuard><VerifyEmail /></AuthGuard>} />
+      <Route path="/forgot-password" element={<AuthGuard><ForgotPassword /></AuthGuard>} />
+      <Route path="/reset-password" element={<AuthGuard><ResetPassword /></AuthGuard>} />
+
+      {/* Setup Flow (Protected, but no Layout needed usually. We use layout to get the Navbar but hide it in logic) */}
+      <Route path="/setup" element={<ProtectedRoute><QuickSetup /></ProtectedRoute>} />
+
+      {/* Protected Dashboard Routes  */}
+      <Route path="/studio" element={<ProtectedRoute><Studio /></ProtectedRoute>} />
+      <Route path="/wardrobe" element={<ProtectedRoute><Wardrobe /></ProtectedRoute>} />
+      <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><ProfileDashboard /></ProtectedRoute>} />
+      <Route path="/settings" element={<Navigate to="/profile" replace />} />
+      <Route path="/admin" element={<AdminProtectedRoute><AdminDashboard /></AdminProtectedRoute>} />
+
+      {/* Redirects */}
+      <Route path="/avatar" element={<Navigate to="/studio" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </>,
+  ),
+);
+
 export default function App() {
   return (
-    <BrowserRouter>
+    <>
       <Toaster 
         position="bottom-right" 
         toastOptions={{ 
@@ -79,32 +116,7 @@ export default function App() {
           duration: 3000 
         }} 
       />
-      <Routes>
-        {/* Unauthenticated / Public Routes */}
-        <Route path="/" element={<AuthGuard><PublicLayout><Home /></PublicLayout></AuthGuard>} />
-        <Route path="/technology" element={<AuthGuard><PublicLayout><Technology /></PublicLayout></AuthGuard>} />
-        <Route path="/pricing" element={<AuthGuard><PublicLayout><Pricing /></PublicLayout></AuthGuard>} />
-        <Route path="/login" element={<AuthGuard><Login /></AuthGuard>} />
-        <Route path="/register" element={<AuthGuard><Register /></AuthGuard>} />
-        <Route path="/verify-email" element={<AuthGuard><VerifyEmail /></AuthGuard>} />
-        <Route path="/forgot-password" element={<AuthGuard><ForgotPassword /></AuthGuard>} />
-        <Route path="/reset-password" element={<AuthGuard><ResetPassword /></AuthGuard>} />
-
-        {/* Setup Flow (Protected, but no Layout needed usually. We use layout to get the Navbar but hide it in logic) */}
-        <Route path="/setup" element={<ProtectedRoute><QuickSetup /></ProtectedRoute>} />
-
-        {/* Protected Dashboard Routes  */}
-        <Route path="/studio" element={<ProtectedRoute><Studio /></ProtectedRoute>} />
-        <Route path="/wardrobe" element={<ProtectedRoute><Wardrobe /></ProtectedRoute>} />
-        <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
-        <Route path="/profile" element={<ProtectedRoute><ProfileDashboard /></ProtectedRoute>} />
-        <Route path="/settings" element={<Navigate to="/profile" replace />} />
-        <Route path="/admin" element={<AdminProtectedRoute><AdminDashboard /></AdminProtectedRoute>} />
-
-        {/* Redirects */}
-        <Route path="/avatar" element={<Navigate to="/studio" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+      <RouterProvider router={router} />
+    </>
   );
 }

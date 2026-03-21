@@ -1,4 +1,3 @@
-using ApplicationAuth.Features.Telegram.Models;
 using ApplicationAuth.Domain.Entities.Identity;
 using ApplicationAuth.DAL.Abstract;
 using Microsoft.EntityFrameworkCore;
@@ -102,11 +101,10 @@ namespace ApplicationAuth.Features.Telegram
                 return;
             }
 
-            var model = new TelegramMessageRequestModel()
-            {
-                UserToken = message.From.Id.ToString(),
-                Text = $"{message.Text ?? "empty text"} - {DateTime.Now}"
-            };
+            var model = new TelegramMessageRequest(
+                $"{message.Text ?? "empty text"} - {DateTime.Now}",
+                message.From.Id.ToString()
+            );
 
             var id = message.From.Id;
             var name = message.From.Username;

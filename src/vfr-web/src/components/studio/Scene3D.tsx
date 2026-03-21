@@ -3,32 +3,46 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import AvatarViewer from '../3d/AvatarViewer';
 import CameraController from '../3d/CameraController';
+import type { ViewportMode } from './studioState';
 
 interface Scene3DProps {
-    avatarUrl: string | null;
+    renderMode: ViewportMode;
+    generatedAvatarUrl: string | null;
     gender: 'male' | 'female';
     height: number;
     weight: number;
     bodyType: string;
+    muscularity: number;
+    bodyFatPercentage: number;
     animation: string;
-    showShirt: boolean;
+    showGarment: boolean;
+    garmentUrl?: string;
+    garmentTint?: string;
     cameraResetTick: number;
     cameraView: 'front' | 'back' | 'left' | 'right' | 'face';
-    localHeight: number;
 }
 
 const Scene3D: React.FC<Scene3DProps> = ({
-    avatarUrl,
+    renderMode,
+    generatedAvatarUrl,
     gender,
     height,
     weight,
     bodyType,
+    muscularity,
+    bodyFatPercentage,
     animation,
-    showShirt,
+    showGarment,
+    garmentUrl,
+    garmentTint,
     cameraResetTick,
     cameraView,
-    localHeight
 }) => {
+    const previewModelUrl = gender === 'male' ? '/models/Male.glb' : '/models/Female.glb';
+    const activeModelUrl = renderMode === 'generated' && generatedAvatarUrl
+        ? generatedAvatarUrl
+        : previewModelUrl;
+
     return (
         <Canvas
             camera={{ position: [0, 1.2, 4], fov: 45 }}
@@ -42,23 +56,28 @@ const Scene3D: React.FC<Scene3DProps> = ({
                 <directionalLight position={[-5, 5, -5]} intensity={0.5} />
 
                 <AvatarViewer
-                    key={avatarUrl ?? gender}
-                    modelUrl={avatarUrl ?? (gender === 'male' ? '/models/Male.glb' : '/models/Female.glb')}
+                    key={`${renderMode}:${activeModelUrl}`}
+                    modelUrl={activeModelUrl}
+                    renderMode={renderMode}
                     height={height}
                     weight={weight}
                     bodyType={bodyType}
+                    muscularity={muscularity}
+                    bodyFatPercentage={bodyFatPercentage}
                     gender={gender}
-                    animation={animation as any}
-                    showShirt={showShirt}
+                    animation={animation as 'idle' | 'walk' | 'run' | 'jump' | 'tpose'}
+                    showGarment={showGarment}
+                    garmentUrl={garmentUrl}
+                    garmentTint={garmentTint}
                 />
 
-                <CameraController avatarHeight={localHeight / 100} trigger={cameraResetTick} view={cameraView} />
-                
+                <CameraController avatarHeight={height / 100} trigger={cameraResetTick} view={cameraView} />
+
                 <ContactShadows position={[0, -1, 0]} opacity={0.4} scale={10} blur={2} far={4} />
                 <OrbitControls
                     makeDefault
                     enablePan={false}
-                    enableZoom={true}
+                    enableZoom
                     minDistance={2}
                     maxDistance={6}
                     maxPolarAngle={Math.PI / 2 + 0.1}

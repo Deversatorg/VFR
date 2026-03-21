@@ -14,6 +14,5 @@ public sealed record QuickSetupCommand(
 ) : IRequest<QuickSetupResult>;
 
 public sealed record QuickSetupResult(
-    Guid   ProfileId,
-    string AvatarModelUrl
+    Guid ProfileId
 );

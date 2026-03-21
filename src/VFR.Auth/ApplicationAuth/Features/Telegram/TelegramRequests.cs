@@ -1,6 +1,5 @@
 using MediatR;
 using System.Collections.Generic;
-using ApplicationAuth.Features.Telegram.Models;
 
 namespace ApplicationAuth.Features.Telegram;
 

@@ -30,18 +30,18 @@ const parseJwtEmail = (token: string | null): string | null => {
 };
 
 export const useAuthStore = create<AuthState>((set) => {
-    const initialToken = localStorage.getItem('vfr_token');
+    const initialToken = sessionStorage.getItem('vfr_token');
     return {
         token: initialToken,
         isAuthenticated: !!initialToken,
         role: parseJwtRole(initialToken),
         email: parseJwtEmail(initialToken),
         login: (token: string) => {
-            localStorage.setItem('vfr_token', token);
+            sessionStorage.setItem('vfr_token', token);
             set({ token, isAuthenticated: true, role: parseJwtRole(token), email: parseJwtEmail(token) });
         },
         logout: () => {
-            localStorage.removeItem('vfr_token');
+            sessionStorage.removeItem('vfr_token');
             set({ token: null, isAuthenticated: false, role: null, email: null });
         }
     };
