@@ -35,7 +35,10 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 // Layouts & Global Components
 import AppLayout from './components/layout/AppLayout';
 import PublicLayout from './components/layout/PublicLayout';
+import { createLogger } from './lib/logger';
 import { useAuthStore } from './store/authStore';
+
+const logger = createLogger('VFR.Web.App');
 
 // Protected Route Wrapper - Uses AppLayout
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -58,8 +61,10 @@ const AdminProtectedRoute = ({ children }: { children: ReactNode }) => {
   const isAdmin = role?.toLowerCase() === 'admin' || role?.toLowerCase() === 'superadmin';
   
   if (!isAdmin) {
-    // Optionally trigger a toast here if we had a toast library
-    console.warn("Access Denied: Admin privileges required.");
+    logger.warn('Blocked navigation to admin route for non-admin user.', {
+      route: '/admin',
+      role,
+    });
     return <Navigate to="/" replace />;
   }
   

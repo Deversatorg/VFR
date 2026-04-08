@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { createLogger } from '../../lib/logger';
+
+const logger = createLogger('VFR.Web.CameraController');
 
 interface CameraControllerProps {
     avatarHeight: number; // Height in meters
@@ -88,7 +91,7 @@ export default function CameraController({ avatarHeight, trigger, view }: Camera
             
             // RELEASE CONTROL
             isAnimating.current = false;
-            console.log("Camera arrived and control released!");
+            logger.debug('Camera animation completed.', { view });
         }
     });
 

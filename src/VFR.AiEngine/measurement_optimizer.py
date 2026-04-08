@@ -101,6 +101,37 @@ LOOP_MEASUREMENT_MAP = {
     "left_bicep_cm": "left_bicep_circumference",
     "left_thigh_cm": "left_thigh_circumference",
 }
+STRICT_EXPLICIT_CIRCUMFERENCE_KEYS = {
+    "chest_cm",
+    "waist_cm",
+    "hips_cm",
+    "shoulder_circumference_cm",
+    "bicep_circumference_cm",
+    "thigh_circumference_cm",
+    "left_bicep_cm",
+    "left_thigh_cm",
+}
+
+CIRCUMFERENCE_WARP_SPECS = {
+    "shoulder_circumference_cm": {"loop_name": "shoulder_circumference", "band_ratio": 0.055, "min_scale": 0.55, "max_scale": 3.5},
+    "chest_cm": {"loop_name": "chest_circumference", "band_ratio": 0.060, "min_scale": 0.45, "max_scale": 3.0},
+    "waist_cm": {"loop_name": "waist_circumference", "band_ratio": 0.065, "min_scale": 0.35, "max_scale": 3.5},
+    "hips_cm": {"loop_name": "hips_circumference", "band_ratio": 0.075, "min_scale": 0.40, "max_scale": 3.0},
+    "bicep_circumference_cm": {"loop_name": "bicep_circumference", "band_ratio": 0.040, "min_scale": 0.45, "max_scale": 3.0},
+    "thigh_circumference_cm": {"loop_name": "thigh_circumference", "band_ratio": 0.050, "min_scale": 0.45, "max_scale": 3.0},
+    "left_bicep_cm": {"loop_name": "left_bicep_circumference", "band_ratio": 0.040, "min_scale": 0.45, "max_scale": 3.0},
+    "left_thigh_cm": {"loop_name": "left_thigh_circumference", "band_ratio": 0.050, "min_scale": 0.45, "max_scale": 3.0},
+}
+CIRCUMFERENCE_WARP_ORDER = (
+    "shoulder_circumference_cm",
+    "chest_cm",
+    "waist_cm",
+    "hips_cm",
+    "bicep_circumference_cm",
+    "thigh_circumference_cm",
+    "left_bicep_cm",
+    "left_thigh_cm",
+)
 
 
 def _squeeze_single_sample(tensor: torch.Tensor, name: str) -> torch.Tensor:
@@ -350,6 +381,61 @@ def _apply_height_compensation(
     return warped_vertices, warped_joints, scale_factor
 
 
+def _warp_circumference_band(
+    vertices: torch.Tensor,
+    measurement_name: str,
+    target_circumference_cm: float,
+) -> tuple[torch.Tensor, float]:
+    warp_spec = CIRCUMFERENCE_WARP_SPECS.get(measurement_name)
+    if warp_spec is None or target_circumference_cm <= 0:
+        return vertices, 1.0
+
+    loop_name = warp_spec["loop_name"]
+    if not _has_valid_loop(loop_name):
+        return vertices, 1.0
+
+    current_circumference_cm = _loop_circumference_cm(vertices, loop_name)
+    current_circumference_value = float(current_circumference_cm.detach().cpu().item())
+    if current_circumference_value <= 1e-6:
+        return vertices, 1.0
+
+    min_scale = float(warp_spec["min_scale"])
+    max_scale = float(warp_spec["max_scale"])
+    scale_factor = torch.clamp(
+        torch.tensor(float(target_circumference_cm), dtype=vertices.dtype, device=vertices.device)
+        / torch.clamp(current_circumference_cm, min=1e-6),
+        min=min_scale,
+        max=max_scale,
+    )
+    scale_factor_value = float(scale_factor.detach().cpu().item())
+    if abs(scale_factor_value - 1.0) <= 1e-3:
+        return vertices, 1.0
+
+    loop_indices = torch.tensor(
+        MEASUREMENT_VERTICES[loop_name],
+        dtype=torch.long,
+        device=vertices.device,
+    )
+    loop_vertices = vertices[loop_indices]
+    loop_center = loop_vertices.mean(dim=0)
+    body_height_m = torch.clamp(_compute_height_cm(vertices) / 100.0, min=1e-3)
+    half_height = torch.clamp(
+        body_height_m * float(warp_spec["band_ratio"]),
+        min=0.02,
+    )
+
+    vertical_distance = torch.abs(vertices[:, 1] - loop_center[1])
+    band_weight = torch.clamp(1.0 - (vertical_distance / half_height), min=0.0).pow(2).unsqueeze(1)
+
+    radial_xz = vertices[:, [0, 2]] - loop_center[[0, 2]]
+    scaled_xz = loop_center[[0, 2]] + radial_xz * (1.0 + band_weight * (scale_factor - 1.0))
+
+    warped_vertices = vertices.clone()
+    warped_vertices[:, 0] = scaled_xz[:, 0]
+    warped_vertices[:, 2] = scaled_xz[:, 1]
+    return warped_vertices, scale_factor_value
+
+
 def apply_proportion_warp(
     vertices: torch.Tensor,
     joints: Optional[torch.Tensor],
@@ -357,6 +443,7 @@ def apply_proportion_warp(
     weights: torch.Tensor | np.ndarray,
     target_measurements: Optional[Dict[str, float]] = None,
     target_height_cm: Optional[float] = None,
+    strict_circumference_keys: Optional[Sequence[str]] = None,
 ) -> tuple[torch.Tensor, Optional[torch.Tensor], Dict[str, float]]:
     normalized_vertices, normalized_joints, _, _ = normalize_to_target_height(
         vertices=vertices,
@@ -376,6 +463,11 @@ def apply_proportion_warp(
     warped_vertices = normalized_vertices
     warped_joints = normalized_joints
     applied_scales: Dict[str, float] = {}
+    strict_circumference_key_set = {
+        key
+        for key in (strict_circumference_keys or ())
+        if key in CIRCUMFERENCE_WARP_SPECS
+    }
 
     leg_target = float(target_measurements.get("leg_length_cm", 0.0) or 0.0)
     if leg_target > 0:
@@ -419,6 +511,20 @@ def apply_proportion_warp(
         )
         if abs(arm_scale - 1.0) > 1e-3:
             applied_scales["arm_length_cm"] = round(arm_scale, 4)
+
+    for measurement_name in CIRCUMFERENCE_WARP_ORDER:
+        if measurement_name not in strict_circumference_key_set:
+            continue
+        circumference_target = float(target_measurements.get(measurement_name, 0.0) or 0.0)
+        if circumference_target <= 0:
+            continue
+        warped_vertices, circumference_scale = _warp_circumference_band(
+            vertices=warped_vertices,
+            measurement_name=measurement_name,
+            target_circumference_cm=circumference_target,
+        )
+        if abs(circumference_scale - 1.0) > 1e-3:
+            applied_scales[measurement_name] = round(circumference_scale, 4)
 
     return warped_vertices, warped_joints, applied_scales
 
@@ -498,6 +604,39 @@ def _prepare_initial_betas(
     return torch.nn.Parameter(beta_values)
 
 
+def _resolve_constraint_weights(
+    *,
+    active_targets: Dict[str, float],
+    explicit_keys: Optional[Sequence[str]],
+    shape_preservation_weight: float,
+    regularization_weight: float,
+) -> tuple[float, float, list[str]]:
+    explicit_key_set = {
+        str(key)
+        for key in (explicit_keys or ())
+        if key is not None and str(key).strip()
+    }
+    active_explicit_measurements = sorted(explicit_key_set & set(active_targets))
+
+    effective_shape_preservation_weight = float(shape_preservation_weight)
+    effective_regularization_weight = float(regularization_weight)
+
+    if explicit_key_set:
+        has_explicit_circumference_targets = bool(explicit_key_set & STRICT_EXPLICIT_CIRCUMFERENCE_KEYS)
+        if has_explicit_circumference_targets:
+            effective_shape_preservation_weight = min(effective_shape_preservation_weight, 0.002)
+            effective_regularization_weight = min(effective_regularization_weight, 0.0001)
+        else:
+            effective_shape_preservation_weight = min(effective_shape_preservation_weight, 0.005)
+            effective_regularization_weight = min(effective_regularization_weight, 0.0005)
+
+    return (
+        effective_shape_preservation_weight,
+        effective_regularization_weight,
+        active_explicit_measurements,
+    )
+
+
 def optimize_smplx_betas(
     target_measurements: Dict[str, float],
     smplx_model_path: str,
@@ -510,6 +649,7 @@ def optimize_smplx_betas(
     initial_betas: Optional[np.ndarray] = None,
     shape_preservation_weight: float = 0.2,
     measurement_weights: Optional[Dict[str, float]] = None,
+    explicit_keys: Optional[Sequence[str]] = None,
     patience: int = 20,
     min_delta: float = 1e-5,
 ) -> np.ndarray:
@@ -559,6 +699,16 @@ def optimize_smplx_betas(
     effective_weights = dict(DEFAULT_MEASUREMENT_WEIGHTS)
     if measurement_weights:
         effective_weights.update(measurement_weights)
+    (
+        effective_shape_preservation_weight,
+        effective_regularization_weight,
+        active_explicit_measurements,
+    ) = _resolve_constraint_weights(
+        active_targets=active_targets,
+        explicit_keys=explicit_keys,
+        shape_preservation_weight=shape_preservation_weight,
+        regularization_weight=regularization_weight,
+    )
 
     best_measurement_loss = float("inf")
     best_objective_loss = float("inf")
@@ -567,20 +717,34 @@ def optimize_smplx_betas(
     stale_iterations = 0
 
     logger.info(
-        "Starting SMPL-X measurement optimization for %s with targets=%s, target_height_cm=%s, shape_preservation_weight=%.3f",
+        "Starting SMPL-X measurement optimization for %s with targets=%s, target_height_cm=%s, "
+        "shape_preservation_weight=%.3f->%.3f, regularization_weight=%.6f->%.6f, explicit_keys=%s",
         gender,
         active_targets,
         target_height_cm,
         shape_preservation_weight,
+        effective_shape_preservation_weight,
+        regularization_weight,
+        effective_regularization_weight,
+        active_explicit_measurements,
     )
 
     for iteration in range(num_iterations):
         optimizer.zero_grad()
 
         output = body_model(betas=betas, return_verts=True)
-        current_measurements = calculate_measurements(
+        warped_vertices, warped_joints, _ = apply_proportion_warp(
             vertices=output.vertices,
             joints=output.joints,
+            parents=body_model.parents,
+            weights=body_model.lbs_weights,
+            target_measurements=active_targets,
+            target_height_cm=target_height_cm,
+            strict_circumference_keys=active_explicit_measurements,
+        )
+        current_measurements = calculate_measurements(
+            vertices=warped_vertices,
+            joints=warped_joints,
             target_height_cm=target_height_cm,
         )
 
@@ -605,12 +769,15 @@ def optimize_smplx_betas(
         measurement_loss = torch.stack(measurement_losses).mean()
         loss = measurement_loss
         shape_preservation_loss = torch.zeros((), dtype=dtype, device=torch_device)
-        if initial_beta_anchor is not None and shape_preservation_weight > 0:
+        if initial_beta_anchor is not None and effective_shape_preservation_weight > 0:
             beta_drift = (betas - initial_beta_anchor).pow(2)
             shape_preservation_loss = (beta_drift * beta_preservation_weights).mean()
-            loss = loss + shape_preservation_weight * shape_preservation_loss
-        if regularization_weight > 0:
-            loss = loss + regularization_weight * betas.pow(2).mean()
+            loss = loss + effective_shape_preservation_weight * shape_preservation_loss
+
+        beta_regularization_loss = torch.zeros((), dtype=dtype, device=torch_device)
+        if effective_regularization_weight > 0:
+            beta_regularization_loss = betas.pow(2).mean()
+            loss = loss + effective_regularization_weight * beta_regularization_loss
 
         if not torch.isfinite(loss):
             raise RuntimeError("Optimization diverged: loss became non-finite.")
@@ -624,6 +791,7 @@ def optimize_smplx_betas(
         current_total_loss = float(loss.detach().cpu().item())
         current_measurement_loss = float(measurement_loss.detach().cpu().item())
         current_shape_preservation_loss = float(shape_preservation_loss.detach().cpu().item())
+        current_beta_regularization_loss = float(beta_regularization_loss.detach().cpu().item())
         if (
             current_total_loss + min_delta < best_objective_loss
             or (
@@ -645,11 +813,13 @@ def optimize_smplx_betas(
                 for measurement_name in active_targets
             }
             logger.info(
-                "Iteration %s/%s: measurement_loss=%.6f, shape_preservation_loss=%.6f, total_loss=%.6f, measurements=%s",
+                "Iteration %s/%s: measurement_loss=%.6f, shape_preservation_loss=%.6f, "
+                "beta_regularization_loss=%.6f, total_loss=%.6f, measurements=%s",
                 iteration + 1,
                 num_iterations,
                 current_measurement_loss,
                 current_shape_preservation_loss,
+                current_beta_regularization_loss,
                 current_total_loss,
                 current_values,
             )
@@ -663,9 +833,18 @@ def optimize_smplx_betas(
 
     with torch.no_grad():
         final_output = body_model(betas=best_betas, return_verts=True)
-        final_measurements = calculate_measurements(
+        final_vertices, final_joints, _ = apply_proportion_warp(
             vertices=final_output.vertices,
             joints=final_output.joints,
+            parents=body_model.parents,
+            weights=body_model.lbs_weights,
+            target_measurements=active_targets,
+            target_height_cm=target_height_cm,
+            strict_circumference_keys=active_explicit_measurements,
+        )
+        final_measurements = calculate_measurements(
+            vertices=final_vertices,
+            joints=final_joints,
             target_height_cm=target_height_cm,
         )
 

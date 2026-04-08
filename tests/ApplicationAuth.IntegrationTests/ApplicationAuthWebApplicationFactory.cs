@@ -2,7 +2,7 @@ using ApplicationAuth.Common.Constants;
 using ApplicationAuth.DAL;
 using ApplicationAuth.DAL.Abstract;
 using ApplicationAuth.Domain.Entities.Identity;
-using ApplicationAuth.Features.Account.Login;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -14,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace ApplicationAuth.IntegrationTests;
 
-public sealed class ApplicationAuthWebApplicationFactory : WebApplicationFactory<LoginHandler>
+public sealed class ApplicationAuthWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"application-auth-tests-{Guid.NewGuid():N}";
 
@@ -31,6 +31,9 @@ public sealed class ApplicationAuthWebApplicationFactory : WebApplicationFactory
             services.RemoveAll(typeof(DbContextOptions<DataContext>));
             services.RemoveAll(typeof(DataContext));
             services.RemoveAll(typeof(IDataContext));
+
+            services.AddDataProtection()
+                .UseEphemeralDataProtectionProvider();
 
             services.AddDbContext<DataContext>(options =>
             {

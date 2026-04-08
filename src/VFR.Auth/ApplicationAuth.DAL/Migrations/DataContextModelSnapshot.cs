@@ -243,6 +243,13 @@ namespace ApplicationAuth.DAL.Migrations
                     b.Property<DateTime?>("CurrentPeriodStart")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("LastStripeEventCreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastStripeEventId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<int>("PlanId")
                         .HasColumnType("integer");
 

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
 using System.Threading;
@@ -21,7 +22,8 @@ namespace ApplicationAuth.Features.Telegram
         private readonly string _apiKey;
         private static TelegramBotClient client;
         private readonly IServiceProvider _serviceProvider;
-        public TelegramCoreService(IConfiguration configuration, IServiceProvider serviceProvider)
+        private readonly ILogger<TelegramCoreService> _logger;
+        public TelegramCoreService(IConfiguration configuration, IServiceProvider serviceProvider, ILogger<TelegramCoreService> logger)
         {
             using var cts = new CancellationTokenSource();
             _apiKey = configuration["TelegramApiKey"];
@@ -31,6 +33,7 @@ namespace ApplicationAuth.Features.Telegram
             client.StartReceiving(_handleUpdateAsync, _handleErrorAsync, receiverOptions, cts.Token);
 
             _serviceProvider = serviceProvider;
+            _logger = logger;
         }
 
         public async Task SendMessage(int chatId, string text)
@@ -47,13 +50,18 @@ namespace ApplicationAuth.Features.Telegram
 
         private Task _handleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
         {
-            var ErrorMessage = exception switch
+            if (exception is ApiRequestException apiRequestException)
             {
-                ApiRequestException apiRequestException => $"Telegram API Error:\n[{apiRequestException.ErrorCode}]\n{apiRequestException.Message}",
-                _ => exception.ToString()
-            };
-
-            Console.WriteLine(ErrorMessage);
+                _logger.LogError(
+                    apiRequestException,
+                    "Telegram API error {TelegramErrorCode}: {TelegramErrorMessage}",
+                    apiRequestException.ErrorCode,
+                    apiRequestException.Message);
+            }
+            else
+            {
+                _logger.LogError(exception, "Unhandled Telegram receiver error.");
+            }
             return Task.CompletedTask;
         }
 

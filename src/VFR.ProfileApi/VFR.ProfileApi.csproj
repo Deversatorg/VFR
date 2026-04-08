@@ -25,4 +25,8 @@
     <ProjectReference Include="..\VFR.ServiceDefaults\VFR.ServiceDefaults.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Features\UpsertStudioProfile\UpsertStudioProfileHandler.cs" />
+  </ItemGroup>
+
 </Project>

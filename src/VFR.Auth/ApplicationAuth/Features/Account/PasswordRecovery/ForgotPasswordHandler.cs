@@ -61,7 +61,7 @@ public class ForgotPasswordHandler : IRequestHandler<ForgotPasswordRequest, bool
             catch (Exception ex)
             {
                 // SMTP not configured — print code to console for development use
-                _logger.LogWarning(ex, "[DEV MODE] SMTP failed. Password reset code for {Email} is: {Code}", user.Email, code);
+                _logger.LogWarning(ex, "Password reset email delivery failed for {Email}.", user.Email);
             }
         }
 

@@ -28,7 +28,10 @@ namespace ApplicationAuth.Features.Account.Shared
             if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password) || !int.TryParse(portString, out int port))
             {
                 _logger.LogWarning("SMTP Email settings are not fully configured in appsettings.json.");
-                _logger.LogInformation($"[MOCK EMAIL to {toEmail}]: Subject: {subject} | Message: {message}");
+                _logger.LogInformation(
+                    "SMTP email delivery skipped because email settings are incomplete. Recipient={RecipientEmail}, Subject={Subject}.",
+                    toEmail,
+                    subject);
                 return;
             }
 
@@ -50,11 +53,11 @@ namespace ApplicationAuth.Features.Account.Shared
                 mailMessage.To.Add(toEmail);
 
                 await client.SendMailAsync(mailMessage);
-                _logger.LogInformation($"Email successfully sent to {toEmail}");
+                _logger.LogInformation("Email successfully sent to {RecipientEmail}.", toEmail);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Failed to send email to {toEmail}");
+                _logger.LogError(ex, "Failed to send email to {RecipientEmail}.", toEmail);
             }
         }
     }

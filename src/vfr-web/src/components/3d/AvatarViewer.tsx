@@ -3,6 +3,7 @@ import { createPortal, useFrame } from '@react-three/fiber';
 import { ErrorBoundary, type FallbackProps } from 'react-error-boundary';
 import { Float, Html, MeshDistortMaterial, useAnimations, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+import { createLogger } from '../../lib/logger';
 
 export interface AvatarViewerProps {
     modelUrl?: string | null;
@@ -21,6 +22,7 @@ export interface AvatarViewerProps {
 }
 
 const DEFAULT_GARMENT_URL = '/models/garments/t-shirt.glb';
+const logger = createLogger('VFR.Web.AvatarViewer');
 
 const SPINE_CANDIDATES = [
     'mixamorig:Spine2',
@@ -459,13 +461,10 @@ function LoadedAvatar({
 
     const garmentScene = useMemo(() => {
         if (garmentGltf.scene === avatarGltf.scene) {
-            console.error(
-                '[AvatarViewer] garment scene collided with avatar scene',
-                '\n  avatar:',
-                url,
-                '\n  garment:',
-                garmentUrl,
-            );
+            logger.error('Garment scene collided with avatar scene.', {
+                avatar_url: url,
+                garment_url: garmentUrl,
+            });
             return null;
         }
 
@@ -518,7 +517,7 @@ function LoadedAvatar({
 }
 
 function AvatarErrorFallback({ error }: FallbackProps) {
-    console.error('[AvatarViewer] GLB error:', error);
+    logger.error('Avatar GLB render failed.', undefined, error);
 
     return (
         <mesh scale={1.2}>

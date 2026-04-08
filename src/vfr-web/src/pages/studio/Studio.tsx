@@ -3,6 +3,7 @@ import { Maximize, Sparkles } from 'lucide-react';
 import { profileClient, avatarClient } from '../../api/apiClients';
 import { unstable_usePrompt as usePrompt, useBeforeUnload, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
+import { createLogger } from '../../lib/logger';
 
 // New Modular Components
 import CameraPresets from '../../components/studio/CameraPresets';
@@ -26,6 +27,7 @@ import {
 const AVATAR_API_URL = import.meta.env.VITE_AI_ENGINE_API_URL || 'http://localhost:8000';
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 60; // 2 min timeout
+const logger = createLogger('VFR.Web.Studio');
 
 const MOCK_CLOTHES = [
     {
@@ -317,7 +319,7 @@ export default function Studio() {
                 }
             } catch (error: any) {
                 if (error.response?.status === 404) { navigate('/setup'); }
-                console.error('Failed to load profile', error);
+                logger.error('Failed to load Studio profile.', undefined, error);
             }
         };
         loadProfile();
@@ -332,7 +334,7 @@ export default function Studio() {
                 }
             })
             .catch(error => {
-                console.error('Failed to compute Studio draft fingerprint', error);
+                logger.error('Failed to compute Studio draft fingerprint.', undefined, error);
             });
 
         return () => {
@@ -457,7 +459,7 @@ export default function Studio() {
             syncProfileToState(profile, hasGeneratedAvatar ? 'generated' : 'preview');
             setSaveStatus('success');
         } catch (error) {
-            console.error('Failed to save Studio draft', error);
+            logger.error('Failed to save Studio draft.', undefined, error);
             setSaveStatus('error');
             setSaveError('Failed to save Studio draft.');
         }
@@ -553,7 +555,7 @@ export default function Studio() {
                             syncProfileToState(profile, 'generated');
                             setSaveStatus('success');
                         } catch (persistError) {
-                            console.error('Failed to persist generated Studio state', persistError);
+                            logger.error('Failed to persist generated Studio state.', { task_id: taskId }, persistError);
                             setAutoMeasurements(nextAutoMeasurements);
                             setGeneratedAvatar({
                                 modelUrl: fullUrl,

@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { BillingApi } from '../../api/apiClients';
 import { CreditCard, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { createLogger } from '../../lib/logger';
+
+const logger = createLogger('VFR.Web.Billing');
 
 interface Subscription {
     id: number;
@@ -55,7 +58,7 @@ export default function Billing() {
                 // Ignore dynamic plans error, stick to static defaults
             }
         } catch (err) {
-            console.error("Failed to load billing", err);
+            logger.error('Failed to load billing data.', undefined, err);
         } finally {
             setIsLoading(false);
         }

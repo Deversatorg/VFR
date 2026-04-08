@@ -11,7 +11,14 @@ namespace ApplicationAuth.Features.Payments.Shared
         Task<string> CreateOrGetCustomerAsync(string email, string existingCustomerId = null);
 
         /// <summary>Creates a Stripe Checkout Session and returns the hosted page URL.</summary>
-        Task<string> CreateCheckoutSessionAsync(string customerId, string priceId, string successUrl, string cancelUrl, int userId);
+        Task<string> CreateCheckoutSessionAsync(
+            string customerId,
+            string priceId,
+            string successUrl,
+            string cancelUrl,
+            int userId,
+            int planId,
+            int subscriptionRecordId);
 
         /// <summary>Retrieves a Stripe Subscription by ID.</summary>
         Task<StripeSubscriptionInfo> GetSubscriptionAsync(string subscriptionId);

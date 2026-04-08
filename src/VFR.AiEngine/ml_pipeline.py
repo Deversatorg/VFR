@@ -38,6 +38,16 @@ PROFILE_OPTIMIZATION_WEIGHTS = {
     "bicep_circumference_cm": 0.5,
     "thigh_circumference_cm": 0.5,
 }
+STRICT_EXPLICIT_MEASUREMENT_WEIGHT = 20.0
+PROFILE_OPTIMIZATION_TARGET_KEYS = {
+    "chest_cm",
+    "waist_cm",
+    "hips_cm",
+    "shoulder_circumference_cm",
+    "bicep_circumference_cm",
+    "thigh_circumference_cm",
+}
+SHOULDER_WIDTH_TO_CIRCUMFERENCE_RATIO = 2.6
 
 
 def _clamp_float(value: float, lower: float, upper: float) -> float:
@@ -95,6 +105,52 @@ def calculate_proxy_targets(
         "bicep_circumference_cm": target_bicep,
         "thigh_circumference_cm": target_thigh,
     }
+
+
+def build_profile_optimizer_targets(
+    target_measurements: dict[str, float],
+    measurement_weights: dict[str, float],
+    measurement_sources: dict[str, str],
+    manual_hint_values: Optional[dict[str, float]] = None,
+) -> tuple[dict[str, float], dict[str, float], list[str]]:
+    optimization_targets = {
+        measurement_name: target_value
+        for measurement_name, target_value in target_measurements.items()
+        if measurement_name in PROFILE_OPTIMIZATION_TARGET_KEYS
+    }
+
+    explicit_manual_measurement_keys = {
+        measurement_name
+        for measurement_name, source in measurement_sources.items()
+        if source == "user"
+    }
+    explicit_manual_hint_keys = {
+        hint_name
+        for hint_name, hint_value in (manual_hint_values or {}).items()
+        if hint_value is not None and float(hint_value) > 0
+    }
+    explicit_keys = sorted(explicit_manual_measurement_keys | explicit_manual_hint_keys)
+
+    optimization_weights = {}
+    for measurement_name in optimization_targets:
+        if measurement_name in explicit_manual_measurement_keys:
+            optimization_weights[measurement_name] = STRICT_EXPLICIT_MEASUREMENT_WEIGHT
+        else:
+            optimization_weights[measurement_name] = PROFILE_OPTIMIZATION_WEIGHTS.get(
+                measurement_name,
+                measurement_weights.get(measurement_name, 1.0),
+            )
+
+    return optimization_targets, optimization_weights, explicit_keys
+
+
+def convert_shoulder_width_to_circumference_cm(shoulder_width_cm: Optional[float]) -> float:
+    if shoulder_width_cm is None:
+        return 0.0
+    value = float(shoulder_width_cm)
+    if value <= 0:
+        return 0.0
+    return round(value * SHOULDER_WIDTH_TO_CIRCUMFERENCE_RATIO, 2)
 
 
 class AvatarMLPipeline:
@@ -346,6 +402,7 @@ class AvatarMLPipeline:
         target_height_m: float = 1.70,
         skin_color: Optional[Tuple[float, float, float]] = None,
         target_measurements: Optional[dict[str, float]] = None,
+        strict_circumference_keys: Optional[list[str]] = None,
     ) -> str:
         """
         Runs the SMPL-X forward pass, exports the mesh as GLB, uploads to S3.
@@ -373,6 +430,7 @@ class AvatarMLPipeline:
             weights=smpl_model.lbs_weights,
             target_measurements=target_measurements,
             target_height_cm=target_height_m * 100.0,
+            strict_circumference_keys=strict_circumference_keys,
         )
         if warp_scales:
             logger.info("Applied post-generation limb warp: %s", warp_scales)
@@ -647,6 +705,33 @@ class AvatarMLPipeline:
                     "torso_length_cm": torso_length,
                 },
             )
+            explicit_manual_measurement_keys = {
+                measurement_name
+                for measurement_name, source in measurement_sources.items()
+                if source == "user"
+            }
+            if explicit_manual_measurement_keys:
+                measurement_weights = {
+                    **measurement_weights,
+                    **{
+                        measurement_name: STRICT_EXPLICIT_MEASUREMENT_WEIGHT
+                        for measurement_name in explicit_manual_measurement_keys
+                    },
+                }
+            explicit_shoulder_circumference_cm = convert_shoulder_width_to_circumference_cm(shoulder)
+            if explicit_shoulder_circumference_cm > 0:
+                target_measurements = {
+                    **target_measurements,
+                    "shoulder_circumference_cm": explicit_shoulder_circumference_cm,
+                }
+                measurement_weights = {
+                    **measurement_weights,
+                    "shoulder_circumference_cm": STRICT_EXPLICIT_MEASUREMENT_WEIGHT,
+                }
+                measurement_sources = {
+                    **measurement_sources,
+                    "shoulder_circumference_cm": "user",
+                }
 
             normalized_muscle_slider = normalize_proxy_slider(muscularity)
             normalized_fat_slider = normalize_proxy_slider(body_fat_percentage)
@@ -657,6 +742,12 @@ class AvatarMLPipeline:
                 gender=gender,
             )
             if proxy_targets:
+                if measurement_sources.get("shoulder_circumference_cm") == "user":
+                    proxy_targets = {
+                        measurement_name: target_value
+                        for measurement_name, target_value in proxy_targets.items()
+                        if measurement_name != "shoulder_circumference_cm"
+                    }
                 target_measurements = {
                     **target_measurements,
                     **proxy_targets,
@@ -699,28 +790,21 @@ class AvatarMLPipeline:
                 measurement_sources,
             )
 
-            optimization_targets = {
-                measurement_name: target_value
-                for measurement_name, target_value in target_measurements.items()
-                if measurement_name in {
-                    "chest_cm",
-                    "waist_cm",
-                    "hips_cm",
-                    "shoulder_circumference_cm",
-                    "bicep_circumference_cm",
-                    "thigh_circumference_cm",
-                }
+            manual_hint_values = {
+                "shoulder_cm": shoulder,
+                "calf_cm": calf,
+                "torso_length_cm": torso_length,
             }
-            optimization_weights = {
-                measurement_name: PROFILE_OPTIMIZATION_WEIGHTS.get(
-                    measurement_name,
-                    measurement_weights.get(measurement_name, 1.0),
-                )
-                for measurement_name in optimization_targets
-            }
+            optimization_targets, optimization_weights, explicit_manual_keys = build_profile_optimizer_targets(
+                target_measurements=target_measurements,
+                measurement_weights=measurement_weights,
+                measurement_sources=measurement_sources,
+                manual_hint_values=manual_hint_values,
+            )
             logger.info(
-                "Optimization loss weights: %s",
+                "Optimization loss weights: %s (explicit_manual_keys=%s)",
                 optimization_weights,
+                explicit_manual_keys,
             )
 
             approximate_hint_fields = []
@@ -745,8 +829,9 @@ class AvatarMLPipeline:
                     num_iterations=optimizer_iterations,
                     target_height_cm=height_cm,
                     initial_betas=heuristic_betas.detach().cpu().numpy(),
-                    shape_preservation_weight=0.35,
+                    shape_preservation_weight=0.05,
                     measurement_weights=optimization_weights,
+                    explicit_keys=explicit_manual_keys,
                     device=str(self.device)
                 )
                 betas = torch.tensor(optimized_betas, dtype=torch.float32, device=self.device)
@@ -766,6 +851,7 @@ class AvatarMLPipeline:
                     weights=smpl_model.lbs_weights,
                     target_measurements=target_measurements,
                     target_height_cm=height_cm,
+                    strict_circumference_keys=explicit_manual_keys,
                 )
                 measured = calculate_measurements(
                     vertices=measured_vertices,
@@ -816,6 +902,7 @@ class AvatarMLPipeline:
                     target_height_m=target_height_m,
                     skin_color=skin_color,
                     target_measurements=target_measurements,
+                    strict_circumference_keys=explicit_manual_keys,
                 )
             else:
                 raise RuntimeError(f"SMPL-X unavailable for gender='{gender}' and neutral fallback also failed.")

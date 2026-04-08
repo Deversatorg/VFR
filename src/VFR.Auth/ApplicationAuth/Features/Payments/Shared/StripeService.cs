@@ -25,7 +25,14 @@ namespace ApplicationAuth.Features.Payments.Shared
             return customer.Id;
         }
 
-        public async Task<string> CreateCheckoutSessionAsync(string customerId, string priceId, string successUrl, string cancelUrl, int userId)
+        public async Task<string> CreateCheckoutSessionAsync(
+            string customerId,
+            string priceId,
+            string successUrl,
+            string cancelUrl,
+            int userId,
+            int planId,
+            int subscriptionRecordId)
         {
             var service = new SessionService();
             var session = await service.CreateAsync(new SessionCreateOptions
@@ -43,7 +50,21 @@ namespace ApplicationAuth.Features.Payments.Shared
                 Mode = "subscription",
                 SuccessUrl = successUrl + "?session_id={CHECKOUT_SESSION_ID}",
                 CancelUrl = cancelUrl,
-                Metadata = new() { ["userId"] = userId.ToString() }
+                Metadata = new()
+                {
+                    ["userId"] = userId.ToString(),
+                    ["planId"] = planId.ToString(),
+                    ["subscriptionRecordId"] = subscriptionRecordId.ToString()
+                },
+                SubscriptionData = new SessionSubscriptionDataOptions
+                {
+                    Metadata = new()
+                    {
+                        ["userId"] = userId.ToString(),
+                        ["planId"] = planId.ToString(),
+                        ["subscriptionRecordId"] = subscriptionRecordId.ToString()
+                    }
+                }
             });
             return session.Url;
         }

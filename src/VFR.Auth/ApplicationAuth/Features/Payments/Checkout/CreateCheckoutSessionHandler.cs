@@ -62,20 +62,24 @@ namespace ApplicationAuth.Features.Payments.Checkout
             var successUrl = _config["Stripe:SuccessUrl"] ?? "http://localhost:1310/payment-success";
             var cancelUrl  = _config["Stripe:CancelUrl"]  ?? "http://localhost:1310/payment-cancel";
 
+            var isMock = string.IsNullOrEmpty(_config["Stripe:SecretKey"]);
+
+            // F-6: Reject plans with no real Stripe Price ID when not in mock mode
+            if (!isMock && string.IsNullOrEmpty(plan.StripePriceId))
+                throw new CustomException(HttpStatusCode.BadRequest, "plan",
+                    "This plan is not configured for live payments. Contact support.");
+
+            // F-7: Reject localhost checkout URLs when not in mock mode
+            if (!isMock && (successUrl.Contains("localhost") || cancelUrl.Contains("localhost")))
+                throw new CustomException(HttpStatusCode.InternalServerError, "config",
+                    "Payment redirect URLs are not configured for production.");
+
             // Get existing Stripe customer ID if user subscribed before
             var previousSub = await _db.Set<EntitySubscription>()
                 .OrderByDescending(s => s.CreatedAt)
                 .FirstOrDefaultAsync(s => s.UserId == request.UserId, ct);
 
             var customerId = await _stripe.CreateOrGetCustomerAsync(user.Email, previousSub?.StripeCustomerId);
-
-            var sessionUrl = await _stripe.CreateCheckoutSessionAsync(
-                customerId,
-                plan.StripePriceId ?? $"mock_price_{plan.Id}",
-                successUrl,
-                cancelUrl,
-                request.UserId
-            );
 
             // Persist a pending subscription record
             var subscription = new EntitySubscription
@@ -91,7 +95,26 @@ namespace ApplicationAuth.Features.Payments.Checkout
             _db.Set<EntitySubscription>().Add(subscription);
             await _db.SaveChangesAsync(ct);
 
-            var isMock = string.IsNullOrEmpty(_config["Stripe:SecretKey"]);
+            string sessionUrl;
+            try
+            {
+                sessionUrl = await _stripe.CreateCheckoutSessionAsync(
+                    customerId,
+                    plan.StripePriceId ?? $"mock_price_{plan.Id}",
+                    successUrl,
+                    cancelUrl,
+                    request.UserId,
+                    plan.Id,
+                    subscription.Id
+                );
+            }
+            catch
+            {
+                _db.Set<EntitySubscription>().Remove(subscription);
+                await _db.SaveChangesAsync(ct);
+                throw;
+            }
+
             return new CheckoutSessionResponse(sessionUrl, isMock);
         }
     }

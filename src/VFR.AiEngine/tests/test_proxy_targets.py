@@ -110,6 +110,50 @@ class ProxyTargetRegressionTests(unittest.TestCase):
             muscle_heavy["thigh_circumference_cm"],
         )
 
+    def test_build_profile_optimizer_targets_elevates_explicit_manual_weights(self):
+        targets, weights, explicit_keys = self.ml_pipeline.build_profile_optimizer_targets(
+            target_measurements={
+                "chest_cm": 101.0,
+                "waist_cm": 50.0,
+                "hips_cm": 96.0,
+                "shoulder_circumference_cm": 118.0,
+                "arm_length_cm": 63.0,
+            },
+            measurement_weights={
+                "chest_cm": 1.3,
+                "waist_cm": 3.0,
+                "hips_cm": 1.2,
+                "shoulder_circumference_cm": 0.3,
+                "arm_length_cm": 0.9,
+            },
+            measurement_sources={
+                "chest_cm": "inferred",
+                "waist_cm": "user",
+                "hips_cm": "inferred",
+                "shoulder_circumference_cm": "proxy_targets(muscle=0.720,fat=0.140)",
+                "arm_length_cm": "user",
+            },
+            manual_hint_values={
+                "torso_length_cm": 100.0,
+                "shoulder_cm": 0.0,
+            },
+        )
+
+        self.assertEqual(targets["waist_cm"], 50.0)
+        self.assertEqual(weights["chest_cm"], 1.0)
+        self.assertEqual(weights["waist_cm"], self.ml_pipeline.STRICT_EXPLICIT_MEASUREMENT_WEIGHT)
+        self.assertEqual(weights["shoulder_circumference_cm"], 0.3)
+        self.assertIn("waist_cm", explicit_keys)
+        self.assertIn("arm_length_cm", explicit_keys)
+        self.assertIn("torso_length_cm", explicit_keys)
+
+    def test_convert_shoulder_width_to_circumference_cm_uses_stable_ratio(self):
+        convert = self.ml_pipeline.convert_shoulder_width_to_circumference_cm
+
+        self.assertEqual(convert(46.0), 119.6)
+        self.assertEqual(convert(0.0), 0.0)
+        self.assertEqual(convert(None), 0.0)
+
     def test_measurement_optimizer_metadata_includes_proxy_measurements(self):
         optimizer = self.measurement_optimizer
 
@@ -126,6 +170,49 @@ class ProxyTargetRegressionTests(unittest.TestCase):
             optimizer.LOOP_MEASUREMENT_MAP["shoulder_circumference_cm"],
             "shoulder_circumference",
         )
+
+    def test_constraint_weights_loosen_for_explicit_manual_targets(self):
+        optimizer = self.measurement_optimizer
+
+        shape_weight, regularization_weight, active_explicit = optimizer._resolve_constraint_weights(
+            active_targets={
+                "waist_cm": 50.0,
+                "hips_cm": 96.0,
+            },
+            explicit_keys=["waist_cm", "torso_length_cm"],
+            shape_preservation_weight=0.05,
+            regularization_weight=0.003,
+        )
+
+        self.assertAlmostEqual(shape_weight, 0.002, places=6)
+        self.assertAlmostEqual(regularization_weight, 0.0001, places=6)
+        self.assertEqual(active_explicit, ["waist_cm"])
+
+    def test_apply_proportion_warp_applies_strict_circumference_warps(self):
+        optimizer = self.measurement_optimizer
+        dummy_vertices = torch.zeros((1, 8, 3), dtype=torch.float32)
+        dummy_joints = torch.zeros((1, 4, 3), dtype=torch.float32)
+        parents = torch.tensor([-1, 0, 1, 2], dtype=torch.long)
+        weights = torch.zeros((8, 4), dtype=torch.float32)
+
+        with (
+            patch.object(optimizer, "normalize_to_target_height", return_value=(dummy_vertices[0], dummy_joints[0], torch.tensor(1.0), torch.tensor(175.0))),
+            patch.object(optimizer, "_prepare_parent_tensor", return_value=parents),
+            patch.object(optimizer, "_prepare_weights_tensor", return_value=weights),
+            patch.object(optimizer, "_warp_circumference_band", return_value=(dummy_vertices[0], 2.0)) as circumference_warp,
+        ):
+            _, _, applied_scales = optimizer.apply_proportion_warp(
+                vertices=dummy_vertices,
+                joints=dummy_joints,
+                parents=parents,
+                weights=weights,
+                target_measurements={"waist_cm": 160.0},
+                target_height_cm=175.0,
+                strict_circumference_keys=["waist_cm"],
+            )
+
+        circumference_warp.assert_called_once()
+        self.assertEqual(applied_scales["waist_cm"], 2.0)
 
     def test_calculate_measurements_exposes_proxy_loop_outputs(self):
         optimizer = self.measurement_optimizer

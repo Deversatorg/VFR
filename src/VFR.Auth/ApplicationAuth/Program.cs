@@ -56,16 +56,9 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Wangkanai.Detection;
-using Serilog;
-using Serilog.Formatting.Compact;
 
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console(new CompactJsonFormatter())
-    .CreateBootstrapLogger();
-
-try
-{
-    var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
+builder.AddServiceDefaults();
 
     // --- Configuration ---
     var configuration = builder.Configuration;
@@ -103,13 +96,6 @@ try
                 || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase));
     }
 
-    // --- Logging ---
-    builder.Services.AddSerilog((services, lc) => lc
-        .ReadFrom.Configuration(configuration)
-        .ReadFrom.Services(services)
-        .Enrich.FromLogContext()
-        .WriteTo.Console(new CompactJsonFormatter()));
-
     // --- Problem Details (RFC 7807) ---
     builder.Services.AddProblemDetails(options =>
     {
@@ -125,9 +111,10 @@ builder.Services.AddSingleton<ApplicationAuth.DAL.Interceptors.AuditableEntityIn
 builder.Services.AddDbContext<DataContext>((sp, options) =>
 {
     var interceptor = sp.GetRequiredService<ApplicationAuth.DAL.Interceptors.AuditableEntityInterceptor>();
+    var enableSensitiveDataLogging = configuration.GetValue<bool>("EfCore:EnableSensitiveDataLogging");
     options.UseNpgsql(configuration.GetConnectionString("Connection"))
            .AddInterceptors(interceptor);
-    options.EnableSensitiveDataLogging(builder.Environment.IsDevelopment());
+    options.EnableSensitiveDataLogging(enableSensitiveDataLogging);
 });
 
 // --- Identity ---
@@ -157,6 +144,7 @@ builder.Services.AddScoped<IJWTService, JWTService>();
 builder.Services.AddMediatR(cfg => {
     cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
     cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
+    cfg.LicenseKey = configuration["MediatR:LicenseKey"];
 });
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 builder.Services.AddScoped<ITelegramService, TelegramHandler>();
@@ -346,8 +334,7 @@ app.UseSwaggerUI(options =>
 app.UseStaticFiles();
 app.UseRouting();
 app.UseCors("AppCors");
-
-app.UseSerilogRequestLogging();
+app.UseDefaultRequestLogging();
 
 // Global Exception Handler → RFC 7807 Problem Details
 app.UseExceptionHandler(appBuilder =>
@@ -447,7 +434,7 @@ app.MapStripeWebhookEndpoint();
 app.MapHealthChecks("/health");
 
 // Allow tests to replace the provider without trying to run PostgreSQL migrations/seeding.
-if (!DatabaseBootstrapControl.ShouldSkip(configuration))
+if (!DatabaseBootstrapControl.ShouldSkip(configuration, app.Environment))
 {
     using var scope = app.Services.CreateScope();
     var services = scope.ServiceProvider;
@@ -456,6 +443,9 @@ if (!DatabaseBootstrapControl.ShouldSkip(configuration))
         var context = services.GetRequiredService<DataContext>();
         var dbInitLogger = services.GetRequiredService<ILogger<Program>>();
         dbInitLogger.LogInformation("Initializing database...");
+        PostgresDatabaseBootstrap.EnsureDatabaseExists(
+            configuration.GetConnectionString("Connection"),
+            dbInitLogger);
         context.Database.Migrate();
         
         var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
@@ -495,7 +485,7 @@ if (!DatabaseBootstrapControl.ShouldSkip(configuration))
                 {
                     Name = "Basic",
                     Description = "Essential features for individuals",
-                    StripePriceId = "",  // Fill with real Stripe Price ID
+                    StripePriceId = null,  // Set to real Stripe Price ID before going live
                     AmountCents = 999,
                     Currency = "usd",
                     Interval = ApplicationAuth.SharedModels.Enums.PlanInterval.Monthly,
@@ -505,7 +495,7 @@ if (!DatabaseBootstrapControl.ShouldSkip(configuration))
                 {
                     Name = "Pro",
                     Description = "Advanced features for power users — best value",
-                    StripePriceId = "",  // Fill with real Stripe Price ID
+                    StripePriceId = null,  // Set to real Stripe Price ID before going live
                     AmountCents = 7999,
                     Currency = "usd",
                     Interval = ApplicationAuth.SharedModels.Enums.PlanInterval.Yearly,
@@ -520,24 +510,8 @@ if (!DatabaseBootstrapControl.ShouldSkip(configuration))
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
         logger.LogError(ex, "An error occurred while seeding the database.");
+        throw;
     }
 }
 
     app.Run();
-}
-catch (Exception ex)
-{
-    var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
-        ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
-
-    if (string.Equals(environmentName, "Testing", StringComparison.OrdinalIgnoreCase))
-    {
-        throw;
-    }
-
-    Log.Fatal(ex, "Application terminated unexpectedly");
-}
-finally
-{
-    Log.CloseAndFlush();
-}

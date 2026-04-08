@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { AdminApi } from '../../api/apiClients';
 import { ShieldAlert, Trash2, Search, Loader2 } from 'lucide-react';
+import { createLogger } from '../../lib/logger';
+
+const logger = createLogger('VFR.Web.AdminDashboard');
 
 interface User {
     id: number;
@@ -39,7 +42,7 @@ export default function AdminDashboard() {
                 setAdmins(adminsArray);
             }
         } catch (error) {
-            console.error("Failed to fetch admin data", error);
+            logger.error('Failed to fetch admin dashboard data.', { active_tab: activeTab }, error);
         } finally {
             setIsLoading(false);
         }
@@ -60,6 +63,7 @@ export default function AdminDashboard() {
                 setAdmins(prev => prev.filter(u => u.id !== id));
             }
         } catch (error) {
+            logger.error('Failed to delete admin dashboard user.', { user_id: id, active_tab: activeTab }, error);
             alert("Delete failed.");
         }
     };

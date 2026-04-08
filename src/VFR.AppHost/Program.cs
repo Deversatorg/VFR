@@ -1,4 +1,21 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
+
 var builder = DistributedApplication.CreateBuilder(args);
+using var bootstrapLoggerFactory = LoggerFactory.Create(logging =>
+{
+    logging.ClearProviders();
+    logging.AddSimpleConsole(options =>
+    {
+        options.TimestampFormat = "O ";
+        options.SingleLine = true;
+    });
+});
+var bootstrapLogger = bootstrapLoggerFactory.CreateLogger("VFR.AppHost");
+var deploymentEnvironment = builder.Environment.EnvironmentName;
+var telemetryNamespace = builder.Configuration["OTEL_SERVICE_NAMESPACE"]?.Trim() ?? "virtual-fitting-room";
+var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]?.Trim();
+var enableAuthStartupBootstrap = builder.Environment.IsDevelopment();
 
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "ApplicationAuthAuthServer";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "Client";
@@ -8,7 +25,7 @@ var bootstrapAdminPassword = builder.Configuration["BootstrapAdmin:Password"] ??
 if (string.IsNullOrWhiteSpace(jwtSigningKey))
 {
     jwtSigningKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64));
-    Console.WriteLine("[AppHost] Jwt:SigningKey was not configured. Generated an ephemeral development signing key.");
+    bootstrapLogger.LogWarning("Jwt:SigningKey was not configured. Generated an ephemeral development signing key.");
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -31,6 +48,7 @@ var aiEngine = builder.AddDockerfile("vfr-aiengine", "../VFR.AiEngine")
     .WithBindMount("../VFR.AiEngine/ml_pipeline.py",      "/app/ml_pipeline.py")
     .WithBindMount("../VFR.AiEngine/main.py",             "/app/main.py")
     .WithBindMount("../VFR.AiEngine/worker.py",           "/app/worker.py")
+    .WithBindMount("../VFR.AiEngine/logging_config.py",   "/app/logging_config.py")
     .WithBindMount("../VFR.AiEngine/garment_pipeline.py", "/app/garment_pipeline.py")
     .WithBindMount("../VFR.AiEngine/s3_client.py",        "/app/s3_client.py")
     .WithBindMount("../VFR.AiEngine/anthropometry.py",    "/app/anthropometry.py")
@@ -42,10 +60,18 @@ var aiEngine = builder.AddDockerfile("vfr-aiengine", "../VFR.AiEngine")
     .WithEnvironment("S3_ACCESS_KEY",   builder.Configuration["S3_ACCESS_KEY"]   ?? "")
     .WithEnvironment("S3_SECRET_KEY",   builder.Configuration["S3_SECRET_KEY"]   ?? "")
     .WithEnvironment("S3_BUCKET_NAME",  builder.Configuration["S3_BUCKET_NAME"]  ?? "vfr-3d-assets")
+    .WithEnvironment("DEPLOYMENT_ENVIRONMENT", deploymentEnvironment)
+    .WithEnvironment("OTEL_SERVICE_NAME", "vfr-aiengine")
+    .WithEnvironment("OTEL_SERVICE_NAMESPACE", telemetryNamespace)
     // PyTorch deadlock prevention
     .WithEnvironment("OMP_NUM_THREADS", "1")
     .WithHttpEndpoint(port: 50051, targetPort: 50051, name: "grpc", isProxied: false)
     .WithHttpEndpoint(port: 8000, targetPort: 8000, name: "http"); 
+
+if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+{
+    aiEngine.WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otlpEndpoint);
+}
 
 // Python Celery Worker (using the same Dockerfile)
 var aiEngineWorker = builder.AddDockerfile("vfr-aiengine-worker", "../VFR.AiEngine")
@@ -54,6 +80,7 @@ var aiEngineWorker = builder.AddDockerfile("vfr-aiengine-worker", "../VFR.AiEngi
     // Hot-reload: same code mounts as the FastAPI container
     .WithBindMount("../VFR.AiEngine/ml_pipeline.py",      "/app/ml_pipeline.py")
     .WithBindMount("../VFR.AiEngine/worker.py",           "/app/worker.py")
+    .WithBindMount("../VFR.AiEngine/logging_config.py",   "/app/logging_config.py")
     .WithBindMount("../VFR.AiEngine/garment_pipeline.py", "/app/garment_pipeline.py")
     .WithBindMount("../VFR.AiEngine/s3_client.py",        "/app/s3_client.py")
     .WithBindMount("../VFR.AiEngine/anthropometry.py",    "/app/anthropometry.py")
@@ -65,9 +92,17 @@ var aiEngineWorker = builder.AddDockerfile("vfr-aiengine-worker", "../VFR.AiEngi
     .WithEnvironment("S3_ACCESS_KEY",   builder.Configuration["S3_ACCESS_KEY"]   ?? "")
     .WithEnvironment("S3_SECRET_KEY",   builder.Configuration["S3_SECRET_KEY"]   ?? "")
     .WithEnvironment("S3_BUCKET_NAME",  builder.Configuration["S3_BUCKET_NAME"]  ?? "vfr-3d-assets")
+    .WithEnvironment("DEPLOYMENT_ENVIRONMENT", deploymentEnvironment)
+    .WithEnvironment("OTEL_SERVICE_NAME", "vfr-aiengine-worker")
+    .WithEnvironment("OTEL_SERVICE_NAMESPACE", telemetryNamespace)
     // PyTorch deadlock prevention
     .WithEnvironment("OMP_NUM_THREADS", "1")
     .WithArgs("celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--pool=solo");
+
+if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+{
+    aiEngineWorker.WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otlpEndpoint);
+}
 
 // ──────────────────────────────────────────────────────────────────
 // Microservices
@@ -75,23 +110,48 @@ var aiEngineWorker = builder.AddDockerfile("vfr-aiengine-worker", "../VFR.AiEngi
 var authService = builder.AddProject<Projects.ApplicationAuth>("vfr-auth")
     .WithReference(authDb)
     .WithEnvironment("ConnectionStrings__Connection", authDb)
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", deploymentEnvironment)
+    .WithEnvironment("DOTNET_ENVIRONMENT", deploymentEnvironment)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
     .WithEnvironment("Jwt__SigningKey", jwtSigningKey)
+    .WithEnvironment("DEPLOYMENT_ENVIRONMENT", deploymentEnvironment)
+    .WithEnvironment("OTEL_SERVICE_NAME", "vfr-auth")
+    .WithEnvironment("OTEL_SERVICE_NAMESPACE", telemetryNamespace)
     .WithEnvironment("BootstrapAdmin__Email", bootstrapAdminEmail)
     .WithEnvironment("BootstrapAdmin__Password", bootstrapAdminPassword)
     .WaitFor(authDb);
+
+if (enableAuthStartupBootstrap)
+{
+    authService.WithEnvironment("VFR_ENABLE_STARTUP_DB_BOOTSTRAP", "true");
+}
+
+if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+{
+    authService.WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otlpEndpoint);
+}
 
 var profileApi = builder.AddProject<Projects.VFR_ProfileApi>("vfr-profileapi")
     .WithReference(profileDb)
     .WithReference(redis)
     .WithReference(authService)   // JWT validation service discovery
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", deploymentEnvironment)
+    .WithEnvironment("DOTNET_ENVIRONMENT", deploymentEnvironment)
     .WithEnvironment("Jwt__Issuer", jwtIssuer)
     .WithEnvironment("Jwt__Audience", jwtAudience)
     .WithEnvironment("Jwt__SigningKey", jwtSigningKey)
+    .WithEnvironment("DEPLOYMENT_ENVIRONMENT", deploymentEnvironment)
+    .WithEnvironment("OTEL_SERVICE_NAME", "vfr-profileapi")
+    .WithEnvironment("OTEL_SERVICE_NAMESPACE", telemetryNamespace)
     .WaitFor(profileDb)
     .WaitFor(redis)
     .WaitFor(authService);
+
+if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+{
+    profileApi.WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", otlpEndpoint);
+}
 
 var vfrWeb = builder.AddNpmApp("vfr-web", "../vfr-web", "dev")
     .WithReference(authService)
@@ -103,6 +163,7 @@ var vfrWeb = builder.AddNpmApp("vfr-web", "../vfr-web", "dev")
     .WithEnvironment("VITE_AUTH_API_URL", authService.GetEndpoint("http"))
     .WithEnvironment("VITE_PROFILE_API_URL", profileApi.GetEndpoint("http"))
     .WithEnvironment("VITE_AI_ENGINE_API_URL", aiEngine.GetEndpoint("http"))
+    .WithEnvironment("VITE_APP_ENVIRONMENT", deploymentEnvironment)
     .WithHttpEndpoint(env: "PORT")
     .WithExternalHttpEndpoints()
     .PublishAsDockerFile();

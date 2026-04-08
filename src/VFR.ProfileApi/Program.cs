@@ -80,7 +80,10 @@ builder.Services.AddAuthorization();
 
 // Clean slices
 builder.Services.AddMediatR(cfg =>
-    cfg.RegisterServicesFromAssemblyContaining<QuickSetupHandler>());
+{
+    cfg.RegisterServicesFromAssemblyContaining<QuickSetupHandler>();
+    cfg.LicenseKey = builder.Configuration["MediatR:LicenseKey"];
+});
 builder.Services.AddValidatorsFromAssemblyContaining<QuickSetupValidator>();
 
 // RFC 7807 problem details
@@ -115,15 +118,21 @@ var app = builder.Build();
 // Allow tests to replace the provider without trying to run PostgreSQL migrations.
 if (!DatabaseBootstrapControl.ShouldSkip(builder.Configuration))
 {
+    app.Logger.LogInformation("Applying Profile API database migrations at startup.");
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ProfileDbContext>();
     await db.Database.MigrateAsync();
+}
+else
+{
+    app.Logger.LogInformation("Skipping Profile API startup migrations due to bootstrap control.");
 }
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseRouting();
 app.UseCors();
+app.UseDefaultRequestLogging();
 app.UseAuthentication();
 app.UseAuthorization();
 

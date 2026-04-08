@@ -9,18 +9,20 @@ from concurrent import futures
 import os
 import logging
 import threading
+import time
 import uuid
 
 import tempfile
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel
 
 import avatar_pb2
 import avatar_pb2_grpc
+from logging_config import configure_logging, generate_request_id, request_context
 
-logging.basicConfig(level=logging.INFO)
+configure_logging("vfr-aiengine")
 logger = logging.getLogger(__name__)
 
 
@@ -92,6 +94,55 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _extract_trace_id(request: Request) -> str | None:
+    traceparent = request.headers.get("traceparent", "").strip()
+    if traceparent:
+        parts = traceparent.split("-")
+        if len(parts) >= 4 and len(parts[1]) == 32:
+            return parts[1]
+
+    return None
+
+
+@app.middleware("http")
+async def add_request_logging(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", "").strip() or generate_request_id()
+    trace_id = _extract_trace_id(request) or request_id
+    started_at = time.perf_counter()
+
+    with request_context(request_id=request_id, trace_id=trace_id):
+        try:
+            response = await call_next(request)
+        except Exception:
+            elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+            logger.exception(
+                "HTTP request failed.",
+                extra={
+                    "http_method": request.method,
+                    "http_path": request.url.path,
+                    "elapsed_ms": elapsed_ms,
+                },
+            )
+            raise
+
+        response.headers["X-Request-ID"] = request_id
+
+        if request.url.path not in {"/", "/health"}:
+            elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
+            log_fn = logger.warning if response.status_code >= 400 else logger.info
+            log_fn(
+                "HTTP request completed.",
+                extra={
+                    "http_method": request.method,
+                    "http_path": request.url.path,
+                    "status_code": response.status_code,
+                    "elapsed_ms": elapsed_ms,
+                },
+            )
+
+        return response
 
 class AvatarGenerationResponse(BaseModel):
     task_id: str
@@ -250,7 +301,10 @@ async def get_garment_status(task_id: str):
 
         return response
     except Exception as e:
-        logger.error(f"Error parsing Celery state for garment task {task_id}: {str(e)}")
+        logger.exception(
+            "Failed to parse garment task status.",
+            extra={"task_id": task_id},
+        )
         return {
             "task_id": task_id,
             "status": "FAILURE",
@@ -289,7 +343,10 @@ async def get_avatar_status(task_id: str):
 
         return response
     except Exception as e:
-        logger.error(f"Error parsing Celery state for {task_id}: {str(e)}")
+        logger.exception(
+            "Failed to parse avatar task status.",
+            extra={"task_id": task_id},
+        )
         return {
             "task_id": task_id,
             "status": "FAILURE",
@@ -321,4 +378,4 @@ if __name__ == "__main__":
         # Start FastAPI on the main thread
         http_port = int(os.getenv("PORT", "8000"))
         logger.info("VFR.AiEngine HTTP FastAPI listening on 0.0.0.0:%d", http_port)
-        uvicorn.run(app, host="0.0.0.0", port=http_port)
+        uvicorn.run(app, host="0.0.0.0", port=http_port, log_config=None, access_log=False)

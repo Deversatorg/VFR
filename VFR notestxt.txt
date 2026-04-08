@@ -1,0 +1,7 @@
+Spin to initiate 5 secs after last change
+Make sensible limits for input data for example ( chest 60-90cm) for women, and body fat has to be min 4% also kg cant be under 30kg
+Maybe need basic athletic|curvy|lean and etc. smplx models for the best generating
+
+Datasetnfor validating "wars start" and compare with sizetable on the websize => your size prediction - base predict to choose size of clothes
+
+when open (height and weight) and a bit down on the page - additional(advanced) with type of fitiing like you want it to be baggy for you, or slim or just-fit and etc. 

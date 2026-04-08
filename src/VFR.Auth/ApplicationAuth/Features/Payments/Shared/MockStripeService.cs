@@ -19,7 +19,14 @@ namespace ApplicationAuth.Features.Payments.Shared
             return Task.FromResult(mockId);
         }
 
-        public Task<string> CreateCheckoutSessionAsync(string customerId, string priceId, string successUrl, string cancelUrl, int userId)
+        public Task<string> CreateCheckoutSessionAsync(
+            string customerId,
+            string priceId,
+            string successUrl,
+            string cancelUrl,
+            int userId,
+            int planId,
+            int subscriptionRecordId)
         {
             // Returns a dummy URL that looks like a real Stripe checkout link
             var sessionId = $"cs_test_MOCK_{Guid.NewGuid():N}";

@@ -22,9 +22,6 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="8.0.13" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.8" />
-    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
-    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="StackExchange.Redis.Extensions.AspNetCore" Version="7.1.1" />
     <PackageReference Include="StackExchange.Redis.Extensions.Core" Version="7.1.1" />
     <PackageReference Include="Stripe.net" Version="39.61.0" />
@@ -56,14 +53,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="wwwroot\HtmlContentTemplates\HtmlLayout.html" />
-    <None Include="wwwroot\Swagger\swagger-ui.style.css" />
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ApplicationAuth.IntegrationTests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>
-    <Content Update="nlog.config">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
+    <None Include="wwwroot\HtmlContentTemplates\HtmlLayout.html" />
+    <None Include="wwwroot\Swagger\swagger-ui.style.css" />
   </ItemGroup>
 
   <ProjectExtensions>

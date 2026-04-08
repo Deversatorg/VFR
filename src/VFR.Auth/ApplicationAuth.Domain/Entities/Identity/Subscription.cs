@@ -24,6 +24,17 @@ namespace ApplicationAuth.Domain.Entities.Identity
         [MaxLength(200)]
         public string StripeSubscriptionId { get; set; }
 
+        /// <summary>
+        /// Last processed Stripe event ID for duplicate suppression.
+        /// </summary>
+        [MaxLength(200)]
+        public string LastStripeEventId { get; set; }
+
+        /// <summary>
+        /// Created timestamp of the last processed Stripe event.
+        /// </summary>
+        public DateTime? LastStripeEventCreatedAt { get; set; }
+
         public int PlanId { get; set; }
 
         public SubscriptionStatus Status { get; set; } = SubscriptionStatus.Incomplete;
