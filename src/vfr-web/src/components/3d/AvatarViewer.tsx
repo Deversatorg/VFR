@@ -400,6 +400,11 @@ function LoadedAvatar({
     const [gRotZ, setGRotZ] = useState(0);
 
     const spineAnchor = useMemo(() => findSpineAnchor(avatarGltf.scene), [avatarGltf.scene]);
+    const spineAnchorRef = useRef<THREE.Object3D | null>(spineAnchor);
+
+    useEffect(() => {
+        spineAnchorRef.current = spineAnchor;
+    }, [spineAnchor]);
 
     useEffect(() => {
         if (!actions || Object.keys(actions).length === 0) {
@@ -413,10 +418,11 @@ function LoadedAvatar({
 
     useFrame(state => {
         const hasActions = actions && Object.keys(actions).length > 0;
-        if (!hasActions && spineAnchor) {
+        const animatedSpineAnchor = spineAnchorRef.current;
+        if (!hasActions && animatedSpineAnchor) {
             const time = state.clock.getElapsedTime();
-            spineAnchor.rotation.x = Math.sin(time * 1.5) * 0.02;
-            spineAnchor.scale.setScalar(1 + Math.sin(time * 1.5) * 0.005);
+            animatedSpineAnchor.rotation.x = Math.sin(time * 1.5) * 0.02;
+            animatedSpineAnchor.scale.setScalar(1 + Math.sin(time * 1.5) * 0.005);
         }
     });
 

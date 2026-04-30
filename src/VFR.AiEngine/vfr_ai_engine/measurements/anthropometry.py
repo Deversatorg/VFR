@@ -1,3 +1,5 @@
+"""Anthropometric priors that turn profile facts into optimizer targets."""
+
 from typing import Dict, Mapping, Tuple
 
 
@@ -21,7 +23,7 @@ ANTHROPOMETRIC_PRIORS = {
         "bicep_ratio": 0.155,
         "thigh_ratio": 0.320,
         # Limb ratios are calibrated to the current measurement definition in
-        # measurement_optimizer.py, which includes collar/hand and pelvis/foot
+        # optimizer.py, which includes collar/hand and pelvis/foot
         # segments. These values are intentionally higher than the older
         # shoulder-elbow-wrist proxy.
         "arm_ratio": 0.374,

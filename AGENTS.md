@@ -5,7 +5,7 @@ Use this file as the shared operating guide for AI agents and human contributors
 ## Repo Map
 
 - `src/vfr-web`: React 19 + Vite frontend for auth-adjacent flows, Studio draft editing, and avatar generation UX.
-- `src/VFR.ProfileApi`: .NET 9 Minimal API for profile data, Studio draft persistence, and generated-avatar metadata.
+- `src/VFR.ProfileApi`: .NET 9 Minimal API for profile data, Studio draft persistence, avatar generation brokering, and generated-avatar metadata.
 - `src/VFR.Auth`: .NET 8 auth, billing, admin, and Telegram slice.
 - `src/VFR.AiEngine`: FastAPI + Celery + PyTorch/SMPL-X pipeline for avatar and garment generation.
 - `src/VFR.AppHost`: Aspire composition root for the local runtime graph.
@@ -21,9 +21,9 @@ Use this file as the shared operating guide for AI agents and human contributors
 
 ## Current Ownership Boundaries
 
-- `vfr-web` owns browser UX, local Studio state, and current direct calls to the AI engine.
-- `VFR.ProfileApi` owns persisted profile data, Studio draft state, and persisted metadata about the last generated avatar.
-- `VFR.ProfileApi` does not currently own avatar enqueue; the browser still calls `VFR.AiEngine` directly.
+- `vfr-web` owns browser UX and local Studio state. It calls `VFR.ProfileApi` for Studio avatar generation.
+- `VFR.ProfileApi` owns persisted profile data, Studio draft state, avatar generation brokering, and persisted metadata about the last generated avatar.
+- `VFR.ProfileApi` calls `VFR.AiEngine` over HTTP for avatar enqueue/status and persists generated-avatar metadata only after a valid model URL is returned.
 - `VFR.Auth` owns identity, tokens, billing, verification, admin flows, and related external integrations.
 - `VFR.AiEngine` owns generation jobs, status polling, proxy-target measurement fitting, and artifact output paths.
 - `VFR.AppHost` owns the local service graph, wiring, and shared runtime composition.
@@ -54,7 +54,7 @@ Run the smallest set that covers the changed boundary. Run .NET test projects se
   `npm run lint`
   Run both from `src/vfr-web`
 - AI engine Python syntax safety:
-  `python -m py_compile main.py worker.py ml_pipeline.py measurement_optimizer.py`
+  `python -m compileall vfr_ai_engine`
   Run from `src/VFR.AiEngine`
 - AI engine contract/helper tests:
   Prefer targeted tests under `src/VFR.AiEngine/tests`

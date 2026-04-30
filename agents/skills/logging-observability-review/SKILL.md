@@ -27,11 +27,11 @@ Read these first:
 - `src/VFR.ServiceDefaults/Extensions.cs`
 - `src/VFR.ProfileApi/Program.cs`
 - `src/VFR.AppHost/Program.cs`
-- `src/VFR.AiEngine/main.py`
-- `src/VFR.AiEngine/worker.py`
-- `src/VFR.AiEngine/ml_pipeline.py`
-- `src/VFR.AiEngine/garment_pipeline.py`
-- `src/VFR.AiEngine/s3_client.py`
+- `src/VFR.AiEngine/vfr_ai_engine/api/main.py`
+- `src/VFR.AiEngine/vfr_ai_engine/tasks`
+- `src/VFR.AiEngine/vfr_ai_engine/avatar/pipeline.py`
+- `src/VFR.AiEngine/vfr_ai_engine/garments/pipeline.py`
+- `src/VFR.AiEngine/vfr_ai_engine/storage/s3_client.py`
 - `src/vfr-web/src`
 - test host factories under `tests/VFR.ProfileApi.IntegrationTests` and `tests/VFR.ApiFlowTests`
 

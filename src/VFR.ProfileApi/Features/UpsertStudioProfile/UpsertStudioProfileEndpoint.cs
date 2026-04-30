@@ -51,12 +51,7 @@ public static class UpsertStudioProfileEndpoint
             request.AutoWaistCircumference,
             request.AutoHipCircumference,
             request.AutoArmLength,
-            request.AutoLegLength,
-            request.GeneratedAvatar is null
-                ? null
-                : new UpsertStudioGeneratedAvatarCommand(
-                    request.GeneratedAvatar.ModelUrl,
-                    request.GeneratedAvatar.GeneratedAt));
+            request.AutoLegLength);
 
         var validation = await validator.ValidateAsync(command, ct);
         if (!validation.IsValid)

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { SessionApi } from '../../api/apiClients';
+import { SessionApi, getApiErrorMessage, getApiErrorPayload } from '../../api/apiClients';
 import { toast } from 'react-hot-toast';
 import { Fingerprint, MonitorSmartphone } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -31,7 +31,7 @@ export default function Login() {
                 toast.success("Welcome back!");
                 navigate('/setup');
             }
-        } catch (regularErr: any) {
+        } catch (regularErr) {
             // SECOND ATTEMPT: Admin Login Fallback
             try {
                 const adminResponse = await SessionApi.adminLogin({ email, password });
@@ -42,12 +42,13 @@ export default function Login() {
                     navigate('/admin');
                     return; // Prevent running finally or outer catch logic
                 }
-            } catch (adminErr: any) {
+            } catch {
                 // BOTH FAILED. Show errors from the initial regular login attempt
-                if (regularErr.response?.data?.errors) {
-                    setFieldErrors(regularErr.response.data.errors);
+                const payload = getApiErrorPayload(regularErr);
+                if (payload?.errors) {
+                    setFieldErrors(payload.errors);
                 }
-                const errMsg = regularErr.response?.data?.detail || regularErr.response?.data?.title || 'Login failed. Please check your credentials.';
+                const errMsg = getApiErrorMessage(regularErr, 'Login failed. Please check your credentials.');
                 setError(errMsg);
                 toast.error(errMsg);
             }
@@ -67,8 +68,8 @@ export default function Login() {
                 login(token);
                 navigate('/setup');
             }
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Google Login mock failed.');
+        } catch (err) {
+            setError(getApiErrorMessage(err, 'Google Login mock failed.'));
         } finally {
             setIsLoading(false);
         }
@@ -85,8 +86,8 @@ export default function Login() {
                 login(token);
                 navigate('/setup');
             }
-        } catch (err: any) {
-            setError(err.response?.data?.detail || 'Apple Login mock failed.');
+        } catch (err) {
+            setError(getApiErrorMessage(err, 'Apple Login mock failed.'));
         } finally {
             setIsLoading(false);
         }

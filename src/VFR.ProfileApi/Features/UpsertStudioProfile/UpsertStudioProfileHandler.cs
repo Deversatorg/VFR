@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using VFR.ProfileApi.Domain;
 using VFR.ProfileApi.Features.GetProfile;
 using VFR.ProfileApi.Features.Studio;
@@ -8,13 +9,15 @@ using VFR.ProfileApi.Infrastructure;
 namespace VFR.ProfileApi.Features.UpsertStudioProfile;
 
 public sealed class UpsertStudioProfileHandler(
-    ProfileDbContext db
+    ProfileDbContext db,
+    ILogger<UpsertStudioProfileHandler> logger
 ) : IRequestHandler<UpsertStudioProfileCommand, GetProfileResponse>
 {
     public async Task<GetProfileResponse> Handle(UpsertStudioProfileCommand cmd, CancellationToken ct)
     {
         var profile = await db.PhysicalProfiles
             .FirstOrDefaultAsync(p => p.UserId == cmd.UserId, ct);
+        var createdProfile = false;
 
         if (profile is null)
         {
@@ -23,6 +26,11 @@ public sealed class UpsertStudioProfileHandler(
                 UserId = cmd.UserId,
             };
             db.PhysicalProfiles.Add(profile);
+            createdProfile = true;
+
+            logger.LogInformation(
+                "Creating Studio profile shell for user {UserId}.",
+                cmd.UserId);
         }
 
         profile.Height = cmd.Height;
@@ -47,30 +55,16 @@ public sealed class UpsertStudioProfileHandler(
         profile.AutoArmLength = cmd.AutoArmLength;
         profile.AutoLegLength = cmd.AutoLegLength;
 
-        if (cmd.GeneratedAvatar is not null)
-        {
-            profile.LastAvatarModelUrl = cmd.GeneratedAvatar.ModelUrl;
-            profile.LastAvatarGeneratedAt = cmd.GeneratedAvatar.GeneratedAt?.ToUniversalTime() ?? DateTime.UtcNow;
-            profile.LastAvatarInputHash = StudioDraftStateHasher.Compute(
-                cmd.Height,
-                cmd.Weight,
-                cmd.BodyType,
-                cmd.Gender,
-                cmd.Muscularity,
-                cmd.BodyFatPercentage,
-                cmd.ChestCircumference,
-                cmd.WaistCircumference,
-                cmd.HipCircumference,
-                cmd.ShoulderWidth,
-                cmd.CalfCircumference,
-                cmd.ArmLength,
-                cmd.TorsoLength,
-                cmd.LegLength);
-        }
-
         profile.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "Studio profile {Action} for user {UserId}. Height={Height}, Weight={Weight}.",
+            createdProfile ? "created" : "updated",
+            cmd.UserId,
+            cmd.Height,
+            cmd.Weight);
 
         return GetProfileResponse.FromProfile(profile);
     }

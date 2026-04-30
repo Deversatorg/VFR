@@ -5,9 +5,12 @@ Supports Backblaze B2 and any S3-compatible storage.
 """
 import os
 import logging
+import shutil
 import boto3
 from botocore.client import Config
 from dotenv import load_dotenv
+
+from vfr_ai_engine.paths import AVATAR_STORAGE_DIR
 
 load_dotenv()  # reads .env when running locally; no-op inside Aspire (env vars injected)
 
@@ -23,6 +26,8 @@ S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "vfr-3d-assets")
 # usually follow: <endpoint>/<bucket>/<key>
 # Strip trailing slash from endpoint to normalise.
 S3_PUBLIC_BASE = f"{_S3_ENDPOINT.rstrip('/')}/{S3_BUCKET_NAME}"
+LOCAL_AVATAR_STORAGE_DIR = str(AVATAR_STORAGE_DIR)
+LOCAL_AVATAR_PUBLIC_BASE = "/models"
 
 
 def _make_client():
@@ -60,11 +65,12 @@ def upload_glb(local_path: str, s3_key: str) -> str:
         s3_key:     Key (path) inside the bucket, e.g. "avatars/profile_uuid.glb".
 
     Returns:
-        Public HTTPS URL to the uploaded file, or a fallback local path.
+        Public HTTPS URL to the uploaded file, or a fallback /models URL.
     """
     if s3_client is None:
-        logger.warning(f"S3 unavailable — returning local path: {local_path}")
-        return local_path
+        local_url = _store_local_avatar(local_path, s3_key)
+        logger.warning(f"S3 unavailable. Serving local avatar at: {local_url}")
+        return local_url
 
     try:
         logger.info(f"Uploading {local_path} → s3://{S3_BUCKET_NAME}/{s3_key}")
@@ -84,6 +90,23 @@ def upload_glb(local_path: str, s3_key: str) -> str:
     except Exception as e:
         logger.error(f"S3 upload failed for {s3_key}: {e}")
         raise
+
+
+def _store_local_avatar(local_path: str, s3_key: str) -> str:
+    """
+    Copies a generated GLB into the FastAPI-served avatars directory and
+    returns the matching public /models URL.
+    """
+    os.makedirs(LOCAL_AVATAR_STORAGE_DIR, exist_ok=True)
+    filename = os.path.basename(s3_key) or os.path.basename(local_path)
+    if not filename:
+        raise ValueError("Cannot derive local avatar filename.")
+
+    destination = os.path.join(LOCAL_AVATAR_STORAGE_DIR, filename)
+    if os.path.abspath(local_path) != os.path.abspath(destination):
+        shutil.copyfile(local_path, destination)
+
+    return f"{LOCAL_AVATAR_PUBLIC_BASE}/{filename}"
 
 
 def delete_old_user_avatars(user_id: str):

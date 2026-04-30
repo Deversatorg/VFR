@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using VFR.ProfileApi.Features.GetProfile;
 using VFR.ProfileApi.Features.QuickSetup;
+using VFR.ProfileApi.Features.StudioAvatarGeneration;
 using VFR.ProfileApi.Features.UpdateMeasurements;
 using VFR.ProfileApi.Features.UpsertStudioProfile;
 using VFR.ProfileApi.Infrastructure;
@@ -77,6 +78,15 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddHttpClient<IAiEngineClient, AiEngineClient>();
+if (builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddSingleton<IStudioAvatarGenerationTracker, InMemoryStudioAvatarGenerationTracker>();
+}
+else
+{
+    builder.Services.AddSingleton<IStudioAvatarGenerationTracker, RedisStudioAvatarGenerationTracker>();
+}
 
 // Clean slices
 builder.Services.AddMediatR(cfg =>
@@ -94,18 +104,11 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        if (allowedCorsOrigins.Length > 0)
-        {
-            policy.WithOrigins(allowedCorsOrigins)
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        }
-        else
-        {
-            policy.SetIsOriginAllowed(IsLocalDevelopmentOrigin)
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        }
+        policy.SetIsOriginAllowed(origin =>
+            allowedCorsOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)
+            || (builder.Environment.IsDevelopment() && IsLocalDevelopmentOrigin(origin)))
+            .AllowAnyHeader()
+            .AllowAnyMethod();
     });
 });
 
@@ -148,6 +151,7 @@ profileGroup.MapGetProfile();
 profileGroup.MapQuickSetup();
 profileGroup.MapUpdateMeasurements();
 profileGroup.MapUpsertStudioProfile();
+profileGroup.MapStudioAvatarGeneration();
 
 app.MapDefaultEndpoints();
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SessionApi } from '../../api/apiClients';
+import { SessionApi, getApiErrorMessage, getApiErrorPayload } from '../../api/apiClients';
 import { ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -27,11 +27,12 @@ export default function ResetPassword() {
             setSuccess(msg);
             toast.success(msg);
             setTimeout(() => navigate('/login'), 2000);
-        } catch (err: any) {
-            if (err.response?.data?.errors) {
-                setFieldErrors(err.response.data.errors);
+        } catch (err) {
+            const payload = getApiErrorPayload(err);
+            if (payload?.errors) {
+                setFieldErrors(payload.errors);
             }
-            const errMsg = err.response?.data?.detail || err.response?.data?.title || 'Failed to reset password. Check your code.';
+            const errMsg = getApiErrorMessage(err, 'Failed to reset password. Check your code.');
             setError(errMsg);
             toast.error(errMsg);
         } finally {

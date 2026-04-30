@@ -1,6 +1,6 @@
 # VFR.AppHost Context
 
-Updated: 2026-03-21
+Updated: 2026-04-27
 
 ## Role
 
@@ -25,13 +25,7 @@ This is the local composition root for the workspace. If you want the stack the 
 - If `Jwt:SigningKey` is missing, AppHost generates an ephemeral dev signing key and shares it with auth/profile.
 - It injects bootstrap admin credentials into auth.
 - It injects `VITE_AUTH_API_URL`, `VITE_PROFILE_API_URL`, and `VITE_AI_ENGINE_API_URL` into the Vite app.
-- It bind-mounts the AI engine source files that currently change most often for local iteration:
-- `ml_pipeline.py`
-- `main.py`
-- `worker.py`
-- `anthropometry.py`
-- `measurement_optimizer.py`
-- `extract_vertex_loops.py`
+- It bind-mounts `../VFR.AiEngine/vfr_ai_engine` into both AI containers for local iteration.
 - It also bind-mounts `../avatars_storage` into the AI containers.
 - It passes S3-compatible storage credentials through environment variables.
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { SessionApi } from '../../api/apiClients';
+import { SessionApi, getApiErrorMessage } from '../../api/apiClients';
 import { MailCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -25,8 +25,8 @@ export default function VerifyEmail() {
             setSuccess(msg);
             toast.success(msg);
             setTimeout(() => navigate('/login'), 2000);
-        } catch (err: any) {
-            const errMsg = err.response?.data?.detail || err.response?.data?.title || 'Verification failed. Invalid code.';
+        } catch (err) {
+            const errMsg = getApiErrorMessage(err, 'Verification failed. Invalid code.');
             setError(errMsg);
             toast.error(errMsg);
         } finally {

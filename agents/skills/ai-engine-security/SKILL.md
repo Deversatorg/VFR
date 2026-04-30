@@ -17,11 +17,11 @@ Read these first:
 
 ## Entry Points
 
-- `src/VFR.AiEngine/main.py`
-- `src/VFR.AiEngine/worker.py`
-- `src/VFR.AiEngine/s3_client.py`
-- `src/VFR.AiEngine/ml_pipeline.py`
-- `src/VFR.AiEngine/garment_pipeline.py`
+- `src/VFR.AiEngine/vfr_ai_engine/api`
+- `src/VFR.AiEngine/vfr_ai_engine/tasks`
+- `src/VFR.AiEngine/vfr_ai_engine/storage/s3_client.py`
+- `src/VFR.AiEngine/vfr_ai_engine/avatar/pipeline.py`
+- `src/VFR.AiEngine/vfr_ai_engine/garments/pipeline.py`
 - `src/VFR.AiEngine/tests/test_status_endpoints.py`
 
 ## Risks

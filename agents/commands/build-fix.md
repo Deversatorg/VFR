@@ -22,7 +22,7 @@ Use this command when the repo does not build, tests fail, or a service stops st
 - Run .NET tests sequentially, never in parallel in this repo.
 - Use the slice-specific integration test project before broadening to `VFR.ApiFlowTests`.
 - For `src/vfr-web`, run `npm run build` and `npm run lint`.
-- For `src/VFR.AiEngine`, run `python -m py_compile main.py worker.py ml_pipeline.py measurement_optimizer.py` before chasing deeper runtime issues.
+- For `src/VFR.AiEngine`, run `python -m compileall vfr_ai_engine` before chasing deeper runtime issues.
 
 ## Output
 

@@ -27,16 +27,16 @@ This is the active frontend for the virtual fitting room. Treat this as the real
 
 - Auth requests go to `VITE_AUTH_API_URL`.
 - Profile requests go to `VITE_PROFILE_API_URL`.
-- Avatar generation requests go directly to `VITE_AI_ENGINE_API_URL`.
+- Avatar generation requests go to the Profile API broker.
 - The profile client injects the bearer token.
-- Studio persists draft state through the Profile API and still enqueues avatar generation directly against the AI engine.
+- Studio persists draft state through the Profile API and enqueues/polls avatar generation through the Profile API broker.
 
 ## Current issues
 
-- Browser code is coupled directly to the AI service boundary.
+- Browser code should no longer shape AI generation payloads directly; keep the Profile API broker as the browser-facing boundary.
 - There is no browser E2E suite yet.
-- The AI URL falls back to `http://localhost:8000`, which can hide missing env wiring.
-- The frontend owns request shaping plus draft-fingerprint logic, so it must stay aligned with both Profile API persistence and AI payload expectations.
+- The legacy AI client still exists for older surfaces; Studio generation should not depend on `VITE_AI_ENGINE_API_URL`.
+- The frontend owns draft-fingerprint logic for local dirty/current UX, while ProfileApi owns generated-avatar persistence.
 - Studio now has separate saved-draft and generated-avatar state, which is better UX but also easier to desynchronize if either backend changes shape.
 
 ## Open next

@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback, useEffectEvent } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Maximize, Sparkles } from 'lucide-react';
-import { profileClient, avatarClient } from '../../api/apiClients';
+import { getApiErrorMessage, getApiErrorStatus, profileClient } from '../../api/apiClients';
 import { unstable_usePrompt as usePrompt, useBeforeUnload, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { createLogger } from '../../lib/logger';
@@ -24,9 +24,9 @@ import {
     type ViewportMode,
 } from '../../components/studio/studioState';
 
-const AVATAR_API_URL = import.meta.env.VITE_AI_ENGINE_API_URL || 'http://localhost:8000';
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 60; // 2 min timeout
+const MAX_CONSECUTIVE_STATUS_FAILURES = 3;
 const logger = createLogger('VFR.Web.Studio');
 
 const MOCK_CLOTHES = [
@@ -73,7 +73,40 @@ const MOCK_CLOTHES = [
 ] as const;
 
 type GenStatus = 'idle' | 'pending' | 'success' | 'error';
+type GenerationPhase = 'idle' | 'saving-draft' | 'queued' | 'generating' | 'saving-result' | 'done' | 'failed';
 type CompositionPresetKey = 'lean' | 'athletic' | 'average' | 'soft';
+type ClothingSelection = {
+    id: string;
+    type: 'top' | 'bottom';
+    supported?: boolean;
+};
+
+type AvatarGenerationStartResponse = {
+    taskId?: string;
+    status?: string;
+    message?: string;
+};
+
+type AvatarGenerationStatusResponse = {
+    taskId?: string;
+    status?: string;
+    progress?: number;
+    message?: string;
+    result?: {
+        modelUrl?: string;
+        profile?: StudioProfileResponse;
+    } | null;
+};
+
+const GENERATION_PHASE_LABELS: Record<GenerationPhase, string> = {
+    idle: 'Preparing generation',
+    'saving-draft': 'Saving Studio draft',
+    queued: 'Waiting for worker',
+    generating: 'Generating avatar',
+    'saving-result': 'Saving generated avatar',
+    done: 'Avatar saved',
+    failed: 'Generation failed',
+};
 
 const DEFAULT_MUSCULARITY_BY_BODY_TYPE: Record<string, number> = {
     slim: 35,
@@ -163,8 +196,6 @@ export default function Studio() {
     const [muscularity, setMuscularity] = useState(getDefaultMuscularity('regular'));
     const [bodyFatPercentage, setBodyFatPercentage] = useState(getDefaultBodyFatPercentage('male', 'regular'));
     const [animation, setAnimation] = useState<'idle' | 'walk' | 'run' | 'jump' | 'tpose'>('idle');
-    const [userId, setUserId] = useState<string>('default_user');
-
     const [manualMeasurements, setManualMeasurements] = useState<ManualMeasurementsState>(EMPTY_MANUAL_MEASUREMENTS);
     const [autoMeasurements, setAutoMeasurements] = useState<AutoMeasurementsState>(EMPTY_AUTO_MEASUREMENTS);
     const [savedDraft, setSavedDraft] = useState<StudioDraftSnapshot | null>(null);
@@ -184,7 +215,7 @@ export default function Studio() {
     const [activeTab, setActiveTab] = useState<'body' | 'wardrobe'>('body');
     const [selectedClothes, setSelectedClothes] = useState<{ top: string | null, bottom: string | null }>({ top: null, bottom: null });
 
-    const handleClothingSelect = (item: any) => {
+    const handleClothingSelect = (item: ClothingSelection) => {
         if (!item.supported) {
             return;
         }
@@ -199,18 +230,21 @@ export default function Studio() {
 
     // Avatar generation state
     const [genStatus, setGenStatus] = useState<GenStatus>('idle');
+    const [genPhase, setGenPhase] = useState<GenerationPhase>('idle');
     const [genProgress, setGenProgress] = useState(0);
     const [genError, setGenError] = useState<string | null>(null);
     const [cameraResetTick, setCameraResetTick] = useState(0);
     const [cameraView, setCameraView] = useState<'front' | 'back' | 'left' | 'right' | 'face'>('front');
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pollCountRef = useRef(0);
+    const pollNetworkFailureCountRef = useRef(0);
     const previousGeneratedAvatarUrlRef = useRef<string | null>(null);
     const selectedTopItem = MOCK_CLOTHES.find(item => item.id === selectedClothes.top) ?? null;
 
     const stopPolling = useCallback(() => {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         pollCountRef.current = 0;
+        pollNetworkFailureCountRef.current = 0;
     }, []);
 
     const handleResetCamera = useCallback(() => {
@@ -259,7 +293,6 @@ export default function Studio() {
             isCurrent: Boolean(profile.generatedAvatar?.isCurrent),
         };
 
-        setUserId(profile.userId || profile.id || 'default_user');
         applyDraftSnapshot(nextDraft);
         setSavedDraft(nextDraft);
         setSavedDraftHash(profile.draftStateHash ?? '');
@@ -317,8 +350,9 @@ export default function Studio() {
                 if (profile) {
                     syncProfileToState(profile);
                 }
-            } catch (error: any) {
-                if (error.response?.status === 404) { navigate('/setup'); }
+            } catch (error) {
+                const responseStatus = (error as { response?: { status?: number } }).response?.status;
+                if (responseStatus === 404) { navigate('/setup'); }
                 logger.error('Failed to load Studio profile.', undefined, error);
             }
         };
@@ -392,15 +426,16 @@ export default function Studio() {
     const generatedAvatarGeneratedAtLabel = generatedAvatar.generatedAt
         ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(generatedAvatar.generatedAt))
         : null;
+    const genPhaseLabel = genStatus === 'pending' ? GENERATION_PHASE_LABELS[genPhase] : null;
 
-    const handleBeforeUnload = useEffectEvent((event: BeforeUnloadEvent) => {
+    const handleBeforeUnload = useCallback((event: BeforeUnloadEvent) => {
         if (!isDraftDirty) {
             return;
         }
 
         event.preventDefault();
         event.returnValue = '';
-    });
+    }, [isDraftDirty]);
 
     useBeforeUnload(handleBeforeUnload);
     usePrompt({
@@ -481,50 +516,47 @@ export default function Studio() {
 
     const handleGenerateAvatar = async () => {
         const draftSnapshot = buildCurrentDraftSnapshot();
-        const draftHash = currentDraftHash || await createStudioDraftFingerprint(draftSnapshot);
 
         setGenStatus('pending');
+        setGenPhase('saving-draft');
         setGenProgress(5);
         setGenError(null);
         setSaveError(null);
         stopPolling();
 
-        const generatePromise = new Promise<void>(async (resolve, reject) => {
+        const generatePromise = (async () => {
             let taskId: string;
             try {
-                await persistStudioProfile(draftSnapshot);
-                const res = await avatarClient.post('/api/v1/avatar/generate-from-profile', {
-                    user_id: userId,
-                    height: draftSnapshot.height,
-                    weight: draftSnapshot.weight,
-                    body_type: draftSnapshot.bodyType,
-                    gender: draftSnapshot.gender,
-                    muscularity: draftSnapshot.muscularity,
-                    body_fat_percentage: draftSnapshot.bodyFatPercentage,
-                    chest: draftSnapshot.manualMeasurements.chest,
-                    waist: draftSnapshot.manualMeasurements.waist,
-                    hip: draftSnapshot.manualMeasurements.hip,
-                    shoulder: draftSnapshot.manualMeasurements.shoulder,
-                    calf: draftSnapshot.manualMeasurements.calf,
-                    arm_length: draftSnapshot.manualMeasurements.armLength,
-                    torso_length: draftSnapshot.manualMeasurements.torsoLength,
-                    leg_length: draftSnapshot.manualMeasurements.legLength,
-                });
-                taskId = res.data.task_id;
-            } catch {
+                const savedProfile = await persistStudioProfile(draftSnapshot);
+                syncProfileToState(savedProfile, hasGeneratedAvatar ? 'generated' : 'preview');
+                setSaveStatus('success');
+
+                setGenPhase('queued');
+                setGenProgress(10);
+                const res = await profileClient.post('/api/v1/profiles/me/studio/avatar-generation');
+                const startPayload = res.data as AvatarGenerationStartResponse;
+                taskId = startPayload.taskId ?? '';
+                if (!taskId) {
+                    throw new Error(startPayload.message || 'Profile API did not return a generation task id.');
+                }
+            } catch (error) {
+                logger.error('Failed to save Studio state or queue avatar generation.', undefined, error);
                 setGenStatus('error');
-                const errMsg = 'Failed to save Studio state or queue avatar generation.';
+                setGenPhase('failed');
+                const errMsg = getApiErrorMessage(error, 'Failed to save Studio state or queue avatar generation.');
                 setGenError(errMsg);
-                reject(new Error(errMsg));
-                return;
+                throw new Error(errMsg);
             }
 
-            pollCountRef.current = 0;
-            pollRef.current = setInterval(async () => {
+            await new Promise<void>((resolve, reject) => {
+                pollCountRef.current = 0;
+                pollNetworkFailureCountRef.current = 0;
+                pollRef.current = setInterval(async () => {
                 pollCountRef.current += 1;
                 if (pollCountRef.current > MAX_POLLS) {
                     stopPolling();
                     setGenStatus('error');
+                    setGenPhase('failed');
                     const errMsg = 'Generation timed out. Please try again.';
                     setGenError(errMsg);
                     reject(new Error(errMsg));
@@ -532,56 +564,75 @@ export default function Studio() {
                 }
 
                 try {
-                    const statusRes = await avatarClient.get(`/api/v1/avatar/status/${taskId}`);
-                    const { status, progress, result } = statusRes.data;
+                    const statusRes = await profileClient.get(`/api/v1/profiles/me/studio/avatar-generation/${taskId}`);
+                    pollNetworkFailureCountRef.current = 0;
+                    const { status, progress, result, message } = statusRes.data as AvatarGenerationStatusResponse;
+                    const normalizedStatus = (status ?? '').toUpperCase();
 
-                    if (status === 'PROGRESS' || status === 'STARTED') {
+                    if (normalizedStatus === 'PENDING') {
+                        setGenPhase('queued');
+                        setGenProgress(Math.max(10, Math.min(40, progress ?? 10)));
+                    } else if (normalizedStatus === 'PROGRESS' || normalizedStatus === 'STARTED') {
+                        setGenPhase('generating');
                         setGenProgress(Math.max(10, Math.min(90, progress ?? 50)));
-                    } else if (status === 'SUCCESS') {
+                    } else if (normalizedStatus === 'SUCCESS') {
                         stopPolling();
-                        const raw = result.model_url as string;
-                        const fullUrl = raw.startsWith('http') ? raw : `${AVATAR_API_URL}${raw}`;
-                        const measuredAutoValues = mapAutoMeasurements(result?.measurements);
-                        const nextAutoMeasurements = Object.values(measuredAutoValues).some(value => value > 0)
-                            ? measuredAutoValues
-                            : draftSnapshot.autoMeasurements;
-                        const generatedAt = new Date().toISOString();
+                        setGenPhase('saving-result');
                         try {
-                            const profile = await persistStudioProfile(
-                                { ...draftSnapshot, autoMeasurements: nextAutoMeasurements },
-                                nextAutoMeasurements,
-                                { modelUrl: fullUrl, generatedAt },
-                            );
+                            const profile = result?.profile
+                                ?? ((await profileClient.get('/api/v1/profiles/me')).data as StudioProfileResponse);
                             syncProfileToState(profile, 'generated');
                             setSaveStatus('success');
                         } catch (persistError) {
-                            logger.error('Failed to persist generated Studio state.', { task_id: taskId }, persistError);
-                            setAutoMeasurements(nextAutoMeasurements);
-                            setGeneratedAvatar({
-                                modelUrl: fullUrl,
-                                generatedAt,
-                                inputHash: draftHash,
-                                isCurrent: true,
-                            });
-                            setViewportMode('generated');
+                            logger.error('Failed to load persisted generated Studio state.', { task_id: taskId }, persistError);
                             setSaveStatus('error');
-                            setSaveError('Avatar generated, but saving its Studio metadata failed.');
+                            setSaveError('Avatar generated, but loading its saved Studio metadata failed.');
                         }
                         setGenProgress(100);
                         setGenStatus('success');
+                        setGenPhase('done');
                         resolve();
-                    } else if (status === 'FAILURE') {
+                    } else if (normalizedStatus === 'STALE') {
                         stopPolling();
                         setGenStatus('error');
-                        const errMsg = statusRes.data.message || 'Generation failed.';
+                        setGenPhase('failed');
+                        const errMsg = message || 'Draft changed while generation was running. Generate again.';
+                        setGenError(errMsg);
+                        reject(new Error(errMsg));
+                    } else if (normalizedStatus === 'FAILURE') {
+                        stopPolling();
+                        setGenStatus('error');
+                        setGenPhase('failed');
+                        const errMsg = message || 'Generation failed.';
                         setGenError(errMsg);
                         reject(new Error(errMsg));
                     }
-                } catch {
+                } catch (error) {
+                    const statusCode = getApiErrorStatus(error);
+                    if (statusCode && statusCode >= 400) {
+                        stopPolling();
+                        setGenStatus('error');
+                        setGenPhase('failed');
+                        const errMsg = getApiErrorMessage(error, 'Generation status failed.');
+                        setGenError(errMsg);
+                        reject(new Error(errMsg));
+                        return;
+                    }
+
+                    pollNetworkFailureCountRef.current += 1;
+                    if (pollNetworkFailureCountRef.current >= MAX_CONSECUTIVE_STATUS_FAILURES) {
+                        stopPolling();
+                        setGenStatus('error');
+                        setGenPhase('failed');
+                        const errMsg = 'Generation status could not be reached. Check your connection and try again.';
+                        setGenError(errMsg);
+                        reject(new Error(errMsg));
+                    }
                     // transient error — keep polling
                 }
-            }, POLL_INTERVAL_MS);
-        });
+                }, POLL_INTERVAL_MS);
+            });
+        })();
 
         toast.promise(generatePromise, {
             loading: 'Compiling Neural Mesh...',
@@ -691,6 +742,7 @@ export default function Studio() {
                     genStatus={genStatus}
                     genProgress={genProgress}
                     genError={genError}
+                    genPhaseLabel={genPhaseLabel}
                     handleGenerateAvatar={handleGenerateAvatar}
                     saveStatus={saveStatus}
                     saveError={saveError}

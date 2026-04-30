@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BillingApi } from '../../api/apiClients';
+import { BillingApi, getApiErrorMessage } from '../../api/apiClients';
 import { CreditCard, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { createLogger } from '../../lib/logger';
@@ -54,7 +54,7 @@ export default function Billing() {
                 if (plansArray && plansArray.length > 0) {
                     setPlans(plansArray);
                 }
-            } catch (e) {
+            } catch {
                 // Ignore dynamic plans error, stick to static defaults
             }
         } catch (err) {
@@ -81,8 +81,8 @@ export default function Billing() {
                 setMessage({ type: 'success', text: 'Checkout initiated, but no redirect URL was provided by the server.' });
                 fetchBillingData(); // Refresh just in case it was a direct upgrade
             }
-        } catch (err: any) {
-            const errMsg = err.response?.data?.detail || 'Failed to initialize checkout.';
+        } catch (err) {
+            const errMsg = getApiErrorMessage(err, 'Failed to initialize checkout.');
             toast.error(errMsg);
             toast.dismiss(loadingToast);
             setMessage({ type: 'error', text: errMsg });
@@ -99,8 +99,8 @@ export default function Billing() {
             await BillingApi.cancelSubscription();
             setMessage({ type: 'success', text: 'Subscription cancelled.' });
             fetchBillingData();
-        } catch (err: any) {
-            setMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to cancel.' });
+        } catch (err) {
+            setMessage({ type: 'error', text: getApiErrorMessage(err, 'Failed to cancel.') });
         } finally {
             setActionLoading(false);
         }

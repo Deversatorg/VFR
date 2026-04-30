@@ -7,6 +7,8 @@ import smplx
 import torch
 import trimesh
 
+from vfr_ai_engine.paths import MODELS_DIR
+
 
 def _slice_mesh_components(
     mesh: trimesh.Trimesh,
@@ -282,7 +284,7 @@ def extract_loops(smplx_model_path: str) -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-    default_model_path = os.path.join(os.path.dirname(__file__), "models")
+    default_model_path = str(MODELS_DIR)
     parser = argparse.ArgumentParser(
         description="Extract SMPL-X vertex loops for anthropometric measurements."
     )

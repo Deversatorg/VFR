@@ -13,6 +13,8 @@ import tempfile
 
 from PIL import Image
 
+from vfr_ai_engine.paths import GARMENT_PRIMITIVES_DIR
+
 logger = logging.getLogger(__name__)
 
 # Map primitive_type strings to base GLB filenames in the models/primitives/ folder
@@ -116,8 +118,7 @@ class GarmentMLPipeline:
                 f"Valid options: {list(PRIMITIVE_MAP.keys())}"
             )
 
-        primitives_dir = os.path.join(os.path.dirname(__file__), "models", "primitives")
-        primitive_path = os.path.join(primitives_dir, glb_filename)
+        primitive_path = os.path.join(str(GARMENT_PRIMITIVES_DIR), glb_filename)
 
         # Build a cross-platform temp output path
         tmp_dir = tempfile.gettempdir()

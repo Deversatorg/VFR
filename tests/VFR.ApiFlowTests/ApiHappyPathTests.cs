@@ -7,12 +7,13 @@ using ApplicationAuth.Features.Account.Login;
 using ApplicationAuth.Features.Account.Register;
 using VFR.ProfileApi.Domain;
 using VFR.ProfileApi.Features.GetProfile;
+using VFR.ProfileApi.Features.StudioAvatarGeneration;
 using VFR.ProfileApi.Features.UpsertStudioProfile;
 using Xunit;
 
 namespace VFR.ApiFlowTests;
 
-public sealed class ApiHappyPathTests : IClassFixture<ApplicationAuthFlowFactory>, IClassFixture<ProfileApiJwtFlowFactory>
+public sealed class ApiHappyPathTests : IClassFixture<ApplicationAuthFlowFactory>
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -20,12 +21,10 @@ public sealed class ApiHappyPathTests : IClassFixture<ApplicationAuthFlowFactory
     };
 
     private readonly ApplicationAuthFlowFactory _authFactory;
-    private readonly ProfileApiJwtFlowFactory _profileFactory;
 
-    public ApiHappyPathTests(ApplicationAuthFlowFactory authFactory, ProfileApiJwtFlowFactory profileFactory)
+    public ApiHappyPathTests(ApplicationAuthFlowFactory authFactory)
     {
         _authFactory = authFactory;
-        _profileFactory = profileFactory;
     }
 
     [Fact]
@@ -56,7 +55,9 @@ public sealed class ApiHappyPathTests : IClassFixture<ApplicationAuthFlowFactory
         var accessToken = loginPayload!.Data.Token.AccessToken;
         Assert.False(string.IsNullOrWhiteSpace(accessToken));
 
-        using var profileClient = _profileFactory.CreateClient();
+        var aiClient = new FakeAiEngineClient();
+        using var profileFactory = new ProfileApiJwtFlowFactory(aiClient);
+        using var profileClient = profileFactory.CreateClient();
         profileClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         var notFoundResponse = await profileClient.GetAsync("/api/v1/profiles/me");
@@ -91,56 +92,39 @@ public sealed class ApiHappyPathTests : IClassFixture<ApplicationAuthFlowFactory
         var profile = await profileClient.GetFromJsonAsync<GetProfileResponse>("/api/v1/profiles/me");
         Assert.NotNull(profile);
 
-        using var aiServer = new AiEnqueueTestServer();
-        var enqueueRequest = CreateAiRequest(profile!);
+        var enqueueResponse = await profileClient.PostAsync(
+            "/api/v1/profiles/me/studio/avatar-generation",
+            content: null);
+        Assert.Equal(HttpStatusCode.OK, enqueueResponse.StatusCode);
 
-        var aiResponse = await aiServer.Client.PostAsJsonAsync(
-            "/api/v1/avatar/generate-from-profile",
-            enqueueRequest,
-            JsonOptions);
-        Assert.Equal(HttpStatusCode.OK, aiResponse.StatusCode);
+        var enqueuePayload = await enqueueResponse.Content.ReadFromJsonAsync<StudioAvatarGenerationStartResponse>();
+        Assert.NotNull(enqueuePayload);
+        Assert.Equal("accepted", enqueuePayload!.Status);
+        Assert.False(string.IsNullOrWhiteSpace(enqueuePayload.TaskId));
 
-        var aiPayload = await aiResponse.Content.ReadFromJsonAsync<AvatarEnqueueAcceptedResponse>();
-        Assert.NotNull(aiPayload);
-        Assert.Equal("accepted", aiPayload!.Status);
-        Assert.Equal("Parametric avatar generation task queued.", aiPayload.Message);
-        Assert.False(string.IsNullOrWhiteSpace(aiPayload.TaskId));
+        Assert.NotNull(aiClient.LastProfile);
+        Assert.Equal(profile.UserId, aiClient.LastProfile!.UserId);
+        Assert.Equal(BodyType.Athletic, aiClient.LastProfile.BodyType);
+        Assert.Equal(AvatarGender.Male, aiClient.LastProfile.Gender);
+        Assert.Equal(181m, aiClient.LastProfile.Height);
+        Assert.Equal(77m, aiClient.LastProfile.Weight);
+        Assert.Equal(72m, aiClient.LastProfile.Muscularity);
+        Assert.Equal(14m, aiClient.LastProfile.BodyFatPercentage);
+        Assert.Equal(101m, aiClient.LastProfile.ChestCircumference);
+        Assert.Equal(83m, aiClient.LastProfile.WaistCircumference);
+        Assert.Equal(98m, aiClient.LastProfile.HipCircumference);
+        Assert.Equal(46m, aiClient.LastProfile.ShoulderWidth);
+        Assert.Equal(38m, aiClient.LastProfile.CalfCircumference);
+        Assert.Equal(62m, aiClient.LastProfile.ArmLength);
+        Assert.Equal(64m, aiClient.LastProfile.TorsoLength);
+        Assert.Equal(108m, aiClient.LastProfile.LegLength);
 
-        Assert.NotNull(aiServer.LastRequest);
-        Assert.Equal(profile.UserId, aiServer.LastRequest!.UserId);
-        Assert.Equal("athletic", aiServer.LastRequest.BodyType);
-        Assert.Equal("male", aiServer.LastRequest.Gender);
-        Assert.Equal(181d, aiServer.LastRequest.Height);
-        Assert.Equal(77d, aiServer.LastRequest.Weight);
-        Assert.Equal(72d, aiServer.LastRequest.Muscularity);
-        Assert.Equal(14d, aiServer.LastRequest.BodyFatPercentage);
-        Assert.Equal(101d, aiServer.LastRequest.Chest);
-        Assert.Equal(83d, aiServer.LastRequest.Waist);
-        Assert.Equal(98d, aiServer.LastRequest.Hip);
-        Assert.Equal(46d, aiServer.LastRequest.Shoulder);
-        Assert.Equal(38d, aiServer.LastRequest.Calf);
-        Assert.Equal(62d, aiServer.LastRequest.ArmLength);
-        Assert.Equal(64d, aiServer.LastRequest.TorsoLength);
-        Assert.Equal(108d, aiServer.LastRequest.LegLength);
-        Assert.Equal(string.Empty, aiServer.LastRequest.FaceImageUrl);
+        var status = await profileClient.GetFromJsonAsync<StudioAvatarGenerationStatusResponse>(
+            $"/api/v1/profiles/me/studio/avatar-generation/{enqueuePayload.TaskId}");
+
+        Assert.NotNull(status);
+        Assert.Equal("SUCCESS", status!.Status);
+        Assert.Equal("http://ai.test/models/generated-avatar.glb", status.Result!.Profile.GeneratedAvatar.ModelUrl);
+        Assert.True(status.Result.Profile.GeneratedAvatar.IsCurrent);
     }
-
-    private static ProfileAvatarEnqueueRequest CreateAiRequest(GetProfileResponse profile) =>
-        new(
-            UserId: profile.UserId,
-            Height: profile.Height,
-            Weight: profile.Weight,
-            BodyType: profile.BodyType.ToLowerInvariant(),
-            Gender: profile.Gender.ToLowerInvariant(),
-            Muscularity: profile.Muscularity ?? 0,
-            BodyFatPercentage: profile.BodyFatPercentage ?? 0,
-            Chest: profile.ManualMeasurements.ChestCircumference ?? 0,
-            Waist: profile.ManualMeasurements.WaistCircumference ?? 0,
-            Hip: profile.ManualMeasurements.HipCircumference ?? 0,
-            Shoulder: profile.ManualMeasurements.ShoulderWidth ?? 0,
-            Calf: profile.ManualMeasurements.CalfCircumference ?? 0,
-            ArmLength: profile.ManualMeasurements.ArmLength ?? 0,
-            TorsoLength: profile.ManualMeasurements.TorsoLength ?? 0,
-            LegLength: profile.ManualMeasurements.LegLength ?? 0,
-            FaceImageUrl: string.Empty);
 }

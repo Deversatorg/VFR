@@ -21,18 +21,18 @@
 
 ## 4. Current Pipelines (Как это работает)
 
-### Pipeline A: Avatar Generation (`ml_pipeline.py`)
+### Pipeline A: Avatar Generation (`vfr_ai_engine/avatar/pipeline.py`)
 - **Вход:** Рост (см), Вес (кг), Тип телосложения.
 - **Логика:** Конвертация параметров в Индекс Массы Тела (BMI) -> маппинг в 10 параметров `betas` для SMPL-X.
 - **Движок:** Модель `SMPLX_NEUTRAL.npz`. Генерация вершин, применение костей (Rigging), поворот по оси X на 180 градусов (чтобы стоял ровно).
 - **Выход:** Файл `user_{uuid}_body.glb` загружается в S3.
 
-### Pipeline B: Garment Generation (`garment_pipeline.py`)
+### Pipeline B: Garment Generation (`vfr_ai_engine/garments/pipeline.py`)
 - **Вход:** 2D-фото одежды, категория (например, "t-shirt").
 - **Логика:** Удаление фона -> создание UV-текстуры -> инъекция текстуры в нужный Smart Template.
 - **Выход:** Зариганный файл `brand_shirt_123.glb` загружается в S3.
 
 ## 5. Current State & Focus
 - Фронтенд успешно рендерит модели.
-- **Текущая задача:** Написание логики генерации SMPL-X (BMI to Betas) внутри `ml_pipeline.py` с использованием `trimesh` для экспорта.
+- **Текущая задача:** Логика генерации SMPL-X (BMI to Betas) живет в `vfr_ai_engine/avatar/pipeline.py`; measurement math вынесена в `vfr_ai_engine/measurements/`.
 - **Запрещено:** Использовать старые модели "Xbot" или пытаться найти в интернете случайные не-зариганные `.fbx` файлы.

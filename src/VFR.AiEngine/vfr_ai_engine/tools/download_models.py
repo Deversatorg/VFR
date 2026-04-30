@@ -1,6 +1,8 @@
 import os
 import urllib.request
 
+from vfr_ai_engine.paths import MODELS_DIR
+
 def reporthook(block_num, block_size, total_size):
     read_so_far = block_num * block_size
     if total_size > 0:
@@ -18,7 +20,7 @@ if __name__ == "__main__":
     base_url = "https://huggingface.co/camenduru/SMPLer-X/resolve/main/smplx"
     models = ["SMPLX_NEUTRAL.npz"]
     
-    out_dir = os.path.join(os.path.dirname(__file__), "models", "smplx")
+    out_dir = os.path.join(str(MODELS_DIR), "smplx")
     
     for model in models:
         download_url(f"{base_url}/{model}?download=true", os.path.join(out_dir, model))

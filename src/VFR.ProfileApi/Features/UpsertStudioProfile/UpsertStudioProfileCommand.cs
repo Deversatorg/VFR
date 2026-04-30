@@ -4,11 +4,6 @@ using VFR.ProfileApi.Features.GetProfile;
 
 namespace VFR.ProfileApi.Features.UpsertStudioProfile;
 
-public sealed record UpsertStudioGeneratedAvatarCommand(
-    string ModelUrl,
-    DateTime? GeneratedAt
-);
-
 public sealed record UpsertStudioProfileCommand(
     string UserId,
     decimal Height,
@@ -29,6 +24,5 @@ public sealed record UpsertStudioProfileCommand(
     decimal? AutoWaistCircumference,
     decimal? AutoHipCircumference,
     decimal? AutoArmLength,
-    decimal? AutoLegLength,
-    UpsertStudioGeneratedAvatarCommand? GeneratedAvatar
+    decimal? AutoLegLength
 ) : IRequest<GetProfileResponse>;

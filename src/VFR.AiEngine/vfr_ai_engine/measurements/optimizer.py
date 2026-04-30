@@ -1,3 +1,5 @@
+"""SMPL-X measurement calculation, corrective warping, and beta optimization."""
+
 import logging
 from typing import Dict, Optional, Sequence, Tuple
 
@@ -9,7 +11,7 @@ import torch
 logger = logging.getLogger("MeasurementOptimizer")
 
 # Vertex loops extracted from the local SMPL-X topology via
-# extract_vertex_loops.py.
+# vfr_ai_engine.validation.extract_vertex_loops.
 MEASUREMENT_VERTICES = {
     "chest_circumference": [3573, 3315, 3314, 3897, 5449, 5531, 8183, 6645, 6077, 6078, 6334, 8340, 8339, 8338, 8342, 8341, 6005, 6003, 8179, 8178, 8262, 8263, 6796, 6134, 6133, 6150, 8267, 8216, 6815, 6814, 6813, 6640, 7188, 6623, 6142, 6143, 5487, 3382, 3381, 3872, 4452, 3892, 4069, 4070, 4071, 5482, 5554, 3389, 3372, 3373, 4050, 5550, 5549, 5444, 5445, 3240, 3242, 5647, 5648, 5644, 5645, 5646],
     "waist_circumference": [3335, 3308, 3293, 3550, 3549, 3547, 3546, 4400, 5940, 7136, 6307, 6308, 6310, 6311, 6056, 6071, 6098, 6329, 6070, 6222, 6221, 6236, 6235, 6278, 8240, 8239, 7137, 7138, 5493, 4402, 4401, 5517, 5520, 3517, 3474, 3475, 3460, 3461, 3307, 3568],
@@ -183,7 +185,7 @@ def _loop_circumference_cm(vertices: torch.Tensor, loop_name: str) -> torch.Tens
     if len(loop_indices) < 3:
         raise RuntimeError(
             f"Vertex loop '{loop_name}' is not configured. "
-            "Run extract_vertex_loops.py and paste the resulting indices into MEASUREMENT_VERTICES."
+            "Run vfr_ai_engine.validation.extract_vertex_loops and paste the resulting indices into MEASUREMENT_VERTICES."
         )
 
     vertex_index_tensor = torch.tensor(loop_indices, dtype=torch.long, device=vertices.device)
@@ -673,7 +675,7 @@ def optimize_smplx_betas(
         if loop_name and not _has_valid_loop(loop_name):
             raise RuntimeError(
                 f"Cannot optimize '{measurement_name}' because '{loop_name}' is still a placeholder. "
-                "Run extract_vertex_loops.py and paste the results into MEASUREMENT_VERTICES."
+                "Run vfr_ai_engine.validation.extract_vertex_loops and paste the results into MEASUREMENT_VERTICES."
             )
 
     torch_device = torch.device(device)

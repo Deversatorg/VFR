@@ -22,7 +22,7 @@ COPY avatar.proto ./avatar.proto
 RUN python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. avatar.proto
 
 # Step 4: Copy application code
-COPY main.py worker.py logging_config.py ml_pipeline.py garment_pipeline.py s3_client.py anthropometry.py measurement_optimizer.py extract_vertex_loops.py ./
+COPY vfr_ai_engine/ vfr_ai_engine/
 COPY models/ models/
 
 EXPOSE 50051 8000
@@ -32,4 +32,4 @@ ENV GRPC_PORT=50051 \
     AVATAR_STORAGE_BASE=https://storage.vfr.dev/models \
     PYTHONUNBUFFERED=1
 
-CMD ["python", "main.py"]
+CMD ["python", "-m", "vfr_ai_engine.api.main"]

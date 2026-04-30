@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using VFR.ProfileApi.Features.StudioAvatarGeneration;
 using VFR.ProfileApi.Features.QuickSetup;
 using VFR.ProfileApi.Infrastructure;
 
@@ -16,6 +17,22 @@ namespace VFR.ApiFlowTests;
 public sealed class ProfileApiJwtFlowFactory : WebApplicationFactory<QuickSetupHandler>
 {
     private readonly string _databaseName = $"profile-api-jwt-flow-tests-{Guid.NewGuid():N}";
+    private readonly string? _aiEngineBaseUrl;
+    private readonly IAiEngineClient? _aiEngineClient;
+
+    public ProfileApiJwtFlowFactory()
+    {
+    }
+
+    internal ProfileApiJwtFlowFactory(string aiEngineBaseUrl)
+    {
+        _aiEngineBaseUrl = aiEngineBaseUrl;
+    }
+
+    internal ProfileApiJwtFlowFactory(IAiEngineClient aiEngineClient)
+    {
+        _aiEngineClient = aiEngineClient;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -23,7 +40,13 @@ public sealed class ProfileApiJwtFlowFactory : WebApplicationFactory<QuickSetupH
         builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            config.AddInMemoryCollection(TestHostDefaults.Configuration);
+            var values = new Dictionary<string, string?>(TestHostDefaults.Configuration);
+            if (!string.IsNullOrWhiteSpace(_aiEngineBaseUrl))
+            {
+                values["AiEngine:BaseUrl"] = _aiEngineBaseUrl;
+            }
+
+            config.AddInMemoryCollection(values);
         });
 
         builder.ConfigureServices(services =>
@@ -39,6 +62,12 @@ public sealed class ProfileApiJwtFlowFactory : WebApplicationFactory<QuickSetupH
 
             services.AddDataProtection()
                 .UseEphemeralDataProtectionProvider();
+
+            if (_aiEngineClient is not null)
+            {
+                services.RemoveAll<IAiEngineClient>();
+                services.AddSingleton(_aiEngineClient);
+            }
         });
     }
 

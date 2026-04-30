@@ -4,7 +4,7 @@ import type { AutoMeasurementsState, ManualMeasurementsState } from './studioSta
 
 interface ClothingItem {
     id: string;
-    type: string;
+    type: 'top' | 'bottom';
     name: string;
     color: string;
     supported?: boolean;
@@ -33,6 +33,7 @@ interface StudioControlsProps {
     genStatus: 'idle' | 'pending' | 'success' | 'error';
     genProgress: number;
     genError: string | null;
+    genPhaseLabel: string | null;
     handleGenerateAvatar: () => void;
     saveStatus: SaveStatus;
     saveError: string | null;
@@ -108,6 +109,7 @@ const StudioControls: React.FC<StudioControlsProps> = ({
     genStatus,
     genProgress,
     genError,
+    genPhaseLabel,
     handleGenerateAvatar,
     saveStatus,
     saveError,
@@ -416,7 +418,7 @@ const StudioControls: React.FC<StudioControlsProps> = ({
                         {genStatus === 'pending' ? (
                             <>
                                 <Cpu className="w-5 h-5 animate-spin" />
-                                <span>Generating your avatar... {Math.max(5, genProgress)}%</span>
+                                <span>{genPhaseLabel ?? 'Generating your avatar'}... {Math.max(5, genProgress)}%</span>
                             </>
                         ) : (
                             <>

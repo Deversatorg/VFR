@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import sys
 import unittest
 from pathlib import Path
@@ -9,35 +9,23 @@ from unittest.mock import patch
 import torch
 
 
-if Path("/app/ml_pipeline.py").exists():
+if Path("/app/vfr_ai_engine").exists():
     AI_ENGINE_DIR = Path("/app")
 else:
     REPO_ROOT = Path(__file__).resolve().parents[3]
     AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
-ML_PIPELINE_PATH = AI_ENGINE_DIR / "ml_pipeline.py"
-MEASUREMENT_OPTIMIZER_PATH = AI_ENGINE_DIR / "measurement_optimizer.py"
 
 
-def _load_module(module_name: str, module_path: Path):
+def _load_module(module_name: str):
     sys.path.insert(0, str(AI_ENGINE_DIR))
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load module from {module_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
+    return importlib.import_module(module_name)
 
 
 class ProxyTargetRegressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.ml_pipeline = _load_module("vfr_aiengine_ml_pipeline_proxy_tests", ML_PIPELINE_PATH)
-        cls.measurement_optimizer = _load_module(
-            "vfr_aiengine_measurement_optimizer_proxy_tests",
-            MEASUREMENT_OPTIMIZER_PATH,
-        )
+        cls.ml_pipeline = _load_module("vfr_ai_engine.measurements.proxy_targets")
+        cls.measurement_optimizer = _load_module("vfr_ai_engine.measurements.optimizer")
 
     def test_normalize_proxy_slider_handles_percent_and_unit_inputs(self):
         normalize = self.ml_pipeline.normalize_proxy_slider

@@ -7,8 +7,9 @@ import numpy as np
 import smplx
 import torch
 
-from anthropometry import infer_measurement_targets
-from measurement_optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
+from vfr_ai_engine.measurements.anthropometry import infer_measurement_targets
+from vfr_ai_engine.measurements.optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
+from vfr_ai_engine.paths import APP_ROOT, MODELS_DIR
 
 
 SUPPORTED_TARGETS = (
@@ -20,6 +21,12 @@ SUPPORTED_TARGETS = (
 )
 
 TORSO_TARGETS = (
+    "chest_cm",
+    "waist_cm",
+    "hips_cm",
+)
+
+STRICT_ASSAY_CIRCUMFERENCE_KEYS = (
     "chest_cm",
     "waist_cm",
     "hips_cm",
@@ -37,12 +44,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model-path",
-        default=os.path.join(os.path.dirname(__file__), "models"),
+        default=str(MODELS_DIR),
         help="Path to the base SMPL-X models directory.",
     )
     parser.add_argument(
         "--output",
-        default=os.path.join(os.path.dirname(__file__), "measurement_validation_report.json"),
+        default=str(APP_ROOT / "measurement_validation_report.json"),
         help="Where to save the JSON validation report.",
     )
     parser.add_argument(
@@ -55,6 +62,24 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=160,
         help="Number of optimizer iterations per case.",
+    )
+    parser.add_argument(
+        "--assay",
+        choices=("standard", "reachability"),
+        default="standard",
+        help="Run the standard validation report or the reachability/calibration assay.",
+    )
+    parser.add_argument(
+        "--random-starts",
+        type=int,
+        default=3,
+        help="Number of unconstrained beta random starts for the reachability assay.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=1337,
+        help="Random seed for reachability assay starts.",
     )
     return parser.parse_args()
 
@@ -189,12 +214,16 @@ def _compute_error_report(
 ) -> Dict[str, Dict[str, float]]:
     report: Dict[str, Dict[str, float]] = {}
     for measurement_name, target_value in targets.items():
+        if measurement_name not in predicted:
+            continue
         predicted_value = float(predicted[measurement_name])
-        abs_error = abs(predicted_value - target_value)
+        signed_error = predicted_value - target_value
+        abs_error = abs(signed_error)
         rel_error = abs_error / max(abs(target_value), 1.0)
         report[measurement_name] = {
             "target": round(target_value, 4),
             "predicted": round(predicted_value, 4),
+            "signed_error": round(signed_error, 4),
             "abs_error": round(abs_error, 4),
             "rel_error": round(rel_error, 6),
         }
@@ -254,10 +283,296 @@ def _build_worst_cases(case_results: List[Dict[str, Any]], limit: int = 5) -> Li
     ]
 
 
+def _max_vertex_displacement_cm(before_vertices: torch.Tensor, after_vertices: torch.Tensor) -> float:
+    before = before_vertices.detach()
+    after = after_vertices.detach()
+    if before.dim() == 3:
+        before = before.squeeze(0)
+    if after.dim() == 3:
+        after = after.squeeze(0)
+    if before.shape != after.shape:
+        return 0.0
+
+    displacement_cm = torch.linalg.norm(after - before, dim=-1) * 100.0
+    return round(float(displacement_cm.max().detach().cpu().item()), 4)
+
+
+def _mesh_values_for_targets(
+    vertices: torch.Tensor,
+    joints: torch.Tensor,
+    *,
+    target_height_cm: float,
+    targets: Dict[str, float],
+) -> Dict[str, float]:
+    measurements = calculate_measurements(
+        vertices=vertices,
+        joints=joints,
+        target_height_cm=target_height_cm,
+    )
+    return _extract_predicted_values(measurements, list(targets.keys()))
+
+
+def _build_assay_stage(
+    *,
+    mesh_values: Dict[str, float],
+    targets: Dict[str, float],
+    extra: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    residuals = _compute_error_report(mesh_values, targets)
+    stage = {
+        "mean_abs_error": round(_mean_abs_error(residuals), 4),
+        "mesh_measurements": {
+            name: round(value, 4)
+            for name, value in mesh_values.items()
+        },
+        "signed_residuals": {
+            name: details["signed_error"]
+            for name, details in residuals.items()
+        },
+        "residuals": residuals,
+        "mesh_measurement_parity": {
+            name: {
+                "target": details["target"],
+                "mesh": details["predicted"],
+                "signed_residual": details["signed_error"],
+            }
+            for name, details in residuals.items()
+        },
+    }
+    if extra:
+        stage.update(extra)
+    return stage
+
+
+def _summarize_assay(case_results: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+    stage_names = (
+        "exact_beta_fit",
+        "unconstrained_beta_fit",
+        "strict_circumference_warp",
+    )
+    summary: Dict[str, Dict[str, float]] = {}
+    for stage_name in stage_names:
+        errors = [
+            case_result["stages"][stage_name]["mean_abs_error"]
+            for case_result in case_results
+            if stage_name in case_result["stages"]
+        ]
+        if not errors:
+            continue
+        summary[stage_name] = {
+            "mean_abs_error": round(float(np.mean(errors)), 4),
+            "max_abs_error": round(float(np.max(errors)), 4),
+        }
+    return summary
+
+
+def _classify_plateau_source(stages: Dict[str, Dict[str, Any]]) -> str:
+    exact_error = stages["exact_beta_fit"]["mean_abs_error"]
+    unconstrained_error = stages["unconstrained_beta_fit"]["mean_abs_error"]
+    warp_error = stages["strict_circumference_warp"]["mean_abs_error"]
+    warp_displacement = stages["strict_circumference_warp"].get("max_vertex_displacement_cm", 0.0)
+
+    if unconstrained_error + 0.5 < exact_error:
+        return "regularization_or_initialization_limit"
+    if warp_error + 0.5 < min(exact_error, unconstrained_error):
+        return "corrective_warp_needed" if warp_displacement <= 8.0 else "loop_or_warp_semantics_mismatch"
+    if min(exact_error, unconstrained_error) > 2.0:
+        return "beta_space_limit_or_loop_tape_mismatch"
+    return "reachable_measurement_fit_check_target_inference"
+
+
+def _run_reachability_assay(args: argparse.Namespace, cases: List[Dict[str, Any]], torch_device: torch.device) -> None:
+    body_models: Dict[str, Any] = {}
+    rng = np.random.default_rng(args.seed)
+    case_results: List[Dict[str, Any]] = []
+
+    for case in cases:
+        gender = case["gender"]
+        if gender not in body_models:
+            body_models[gender] = smplx.create(
+                model_path=args.model_path,
+                model_type="smplx",
+                gender=gender,
+                num_betas=10,
+                use_face_contour=False,
+                ext="npz",
+            ).to(torch_device)
+
+        body_model = body_models[gender]
+        heuristic_betas = _simulate_profile_betas(
+            height_cm=case["height_cm"],
+            weight_kg=case["weight_kg"],
+            body_type=case["body_type"],
+            device=torch_device,
+            chest=case["targets"].get("chest_cm", 0.0),
+            waist=case["targets"].get("waist_cm", 0.0),
+            hip=case["targets"].get("hips_cm", 0.0),
+            arm_length=case["targets"].get("arm_length_cm", 0.0),
+            leg_length=case["targets"].get("leg_length_cm", 0.0),
+        )
+        exact_shape_targets = {
+            measurement_name: case["targets"][measurement_name]
+            for measurement_name in TORSO_TARGETS
+            if measurement_name in case["targets"]
+        } or case["targets"]
+
+        exact_betas = optimize_smplx_betas(
+            target_measurements=exact_shape_targets,
+            smplx_model_path=args.model_path,
+            gender=gender,
+            num_iterations=args.iterations,
+            device=args.device,
+            target_height_cm=case["height_cm"],
+            initial_betas=heuristic_betas.detach().cpu().numpy(),
+            explicit_keys=list(exact_shape_targets.keys()),
+        )
+        exact_betas_tensor = torch.tensor(exact_betas, dtype=torch.float32, device=torch_device)
+        with torch.no_grad():
+            exact_output = body_model(betas=exact_betas_tensor, return_verts=True)
+
+        exact_mesh_values = _mesh_values_for_targets(
+            exact_output.vertices,
+            exact_output.joints,
+            target_height_cm=case["height_cm"],
+            targets=case["targets"],
+        )
+        exact_stage = _build_assay_stage(
+            mesh_values=exact_mesh_values,
+            targets=case["targets"],
+            extra={"optimized_targets": sorted(exact_shape_targets.keys())},
+        )
+
+        unconstrained_attempts: List[Dict[str, Any]] = []
+        best_unconstrained_stage: Dict[str, Any] | None = None
+        for start_index in range(max(1, args.random_starts)):
+            initial_betas = rng.normal(loc=0.0, scale=1.0, size=(1, 10)).clip(-2.5, 2.5).astype(np.float32)
+            try:
+                unconstrained_betas = optimize_smplx_betas(
+                    target_measurements=case["targets"],
+                    smplx_model_path=args.model_path,
+                    gender=gender,
+                    num_iterations=args.iterations,
+                    device=args.device,
+                    target_height_cm=case["height_cm"],
+                    initial_betas=initial_betas,
+                    regularization_weight=0.0,
+                    shape_preservation_weight=0.0,
+                    measurement_weights={key: 1.0 for key in case["targets"]},
+                    explicit_keys=list(case["targets"].keys()),
+                )
+                unconstrained_betas_tensor = torch.tensor(unconstrained_betas, dtype=torch.float32, device=torch_device)
+                with torch.no_grad():
+                    unconstrained_output = body_model(betas=unconstrained_betas_tensor, return_verts=True)
+                unconstrained_mesh_values = _mesh_values_for_targets(
+                    unconstrained_output.vertices,
+                    unconstrained_output.joints,
+                    target_height_cm=case["height_cm"],
+                    targets=case["targets"],
+                )
+                stage = _build_assay_stage(
+                    mesh_values=unconstrained_mesh_values,
+                    targets=case["targets"],
+                    extra={
+                        "start_index": start_index,
+                        "initial_beta_norm": round(float(np.linalg.norm(initial_betas)), 4),
+                    },
+                )
+                unconstrained_attempts.append({
+                    "start_index": start_index,
+                    "mean_abs_error": stage["mean_abs_error"],
+                })
+                if best_unconstrained_stage is None or stage["mean_abs_error"] < best_unconstrained_stage["mean_abs_error"]:
+                    best_unconstrained_stage = stage
+            except Exception as exc:
+                unconstrained_attempts.append({
+                    "start_index": start_index,
+                    "error": str(exc),
+                })
+
+        if best_unconstrained_stage is None:
+            raise RuntimeError(f"All unconstrained assay starts failed for case {case['name']}.")
+        best_unconstrained_stage["attempts"] = unconstrained_attempts
+
+        normalized_exact_vertices, normalized_exact_joints, _ = apply_proportion_warp(
+            vertices=exact_output.vertices,
+            joints=exact_output.joints,
+            parents=body_model.parents,
+            weights=body_model.lbs_weights,
+            target_measurements={},
+            target_height_cm=case["height_cm"],
+        )
+        strict_vertices, strict_joints, applied_scales = apply_proportion_warp(
+            vertices=exact_output.vertices,
+            joints=exact_output.joints,
+            parents=body_model.parents,
+            weights=body_model.lbs_weights,
+            target_measurements=case["targets"],
+            target_height_cm=case["height_cm"],
+            strict_circumference_keys=STRICT_ASSAY_CIRCUMFERENCE_KEYS,
+        )
+        strict_mesh_values = _mesh_values_for_targets(
+            strict_vertices,
+            strict_joints,
+            target_height_cm=case["height_cm"],
+            targets=case["targets"],
+        )
+        strict_stage = _build_assay_stage(
+            mesh_values=strict_mesh_values,
+            targets=case["targets"],
+            extra={
+                "warp_scale": applied_scales,
+                "max_vertex_displacement_cm": _max_vertex_displacement_cm(
+                    normalized_exact_vertices,
+                    strict_vertices,
+                ),
+            },
+        )
+
+        stages = {
+            "exact_beta_fit": exact_stage,
+            "unconstrained_beta_fit": best_unconstrained_stage,
+            "strict_circumference_warp": strict_stage,
+        }
+        case_results.append(
+            {
+                "name": case["name"],
+                "gender": gender,
+                "height_cm": case["height_cm"],
+                "weight_kg": case["weight_kg"],
+                "body_type": case["body_type"],
+                "targets": case["targets"],
+                "classification": _classify_plateau_source(stages),
+                "stages": stages,
+            }
+        )
+
+    report = {
+        "assay": "reachability_calibration",
+        "case_count": len(case_results),
+        "random_starts": max(1, args.random_starts),
+        "summary": _summarize_assay(case_results),
+        "cases": case_results,
+    }
+
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    with open(args.output, "w", encoding="utf-8") as handle:
+        json.dump(report, handle, ensure_ascii=True, indent=2)
+
+    print(json.dumps(report["summary"], ensure_ascii=True, indent=2))
+    print(f"\nSaved reachability assay report to: {args.output}")
+
+
 def main() -> None:
     args = _parse_args()
     torch_device = torch.device(args.device)
     cases = [_normalize_case(case) for case in _load_cases(args.cases)]
+
+    if args.assay == "reachability":
+        _run_reachability_assay(args, cases, torch_device)
+        return
 
     body_models: Dict[str, Any] = {}
     case_results: List[Dict[str, Any]] = []

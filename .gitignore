@@ -41,6 +41,8 @@ build/
 .codex_build/
 output/
 tmp/
+.playwright-cli/
+tests/artifacts/
 
 # Python
 __pycache__/

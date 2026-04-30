@@ -8,7 +8,7 @@ This is the active virtual fitting room workspace with:
 
 - `src/vfr-web`: React 19 + Vite Studio and wardrobe app
 - `src/VFR.Auth`: .NET 8 auth, payments, and Telegram slice
-- `src/VFR.ProfileApi`: .NET 9 profile and Studio draft API
+- `src/VFR.ProfileApi`: .NET 9 profile, Studio draft, and avatar-generation broker API
 - `src/VFR.AiEngine`: Python FastAPI + Celery avatar pipeline
 - `src/VFR.AppHost`: Aspire composition root for the local stack
 
@@ -25,8 +25,8 @@ This is the active virtual fitting room workspace with:
 - The browser currently talks directly to:
 - `ApplicationAuth` over HTTP for auth and billing.
 - `VFR.ProfileApi` over HTTP for profile and Studio draft persistence.
-- `VFR.AiEngine` over HTTP for avatar enqueue and status polling.
-- `VFR.ProfileApi` stores the Studio draft and generated avatar metadata, but it still does not broker AI generation.
+- `VFR.ProfileApi` over HTTP for profile, Studio draft persistence, generated-avatar metadata, and avatar generation enqueue/status.
+- `VFR.ProfileApi` calls `VFR.AiEngine` over HTTP for avatar enqueue and status polling.
 
 ## Current test picture
 
@@ -41,7 +41,7 @@ This is the active virtual fitting room workspace with:
 ## Main current problems
 
 - The workspace still mixes .NET 8 auth projects with .NET 9 AppHost/profile projects.
-- The frontend is aware of the internal AI boundary because avatar generation bypasses the profile API.
+- Avatar generation now flows through ProfileApi, but the broker contract and AI artifact URL behavior must stay aligned.
 - Auth and profile services still contain startup bootstrap logic that tests have to disable explicitly.
 - AI body composition is now driven by proxy anthropometric targets, but the shoulder/bicep/thigh loops are still partly placeholder-based.
 - Config remains split between AppHost configuration, service appsettings, and Python env variables.
@@ -50,8 +50,9 @@ This is the active virtual fitting room workspace with:
 
 - `src/VFR.AppHost/Program.cs`
 - `src/vfr-web/src/pages/studio/Studio.tsx`
+- `src/VFR.ProfileApi/Features/StudioAvatarGeneration`
 - `src/VFR.ProfileApi/Program.cs`
 - `src/VFR.ProfileApi/Features/UpsertStudioProfile`
-- `src/VFR.AiEngine/ml_pipeline.py`
+- `src/VFR.AiEngine/vfr_ai_engine/avatar/pipeline.py`
 - `src/VFR.Auth/ApplicationAuth/Program.cs`
 - `docs/runtime-config.md`

@@ -11,6 +11,11 @@ interface CameraControllerProps {
     view: 'front' | 'back' | 'left' | 'right' | 'face';
 }
 
+type OrbitControlsLike = {
+    target: THREE.Vector3;
+    update: () => void;
+};
+
 export default function CameraController({ avatarHeight, trigger, view }: CameraControllerProps) {
     const { camera } = useThree();
     
@@ -21,7 +26,7 @@ export default function CameraController({ avatarHeight, trigger, view }: Camera
 
     useEffect(() => {
         const centerY = avatarHeight / 2;
-        let lookAtY = centerY;
+        const lookAtY = centerY;
 
         // Calculate distance to fit the avatar using trigonometry
         let fov = 45; // default FOV
@@ -69,11 +74,10 @@ export default function CameraController({ avatarHeight, trigger, view }: Camera
         const speed = 5.0;
         state.camera.position.lerp(targetPosition.current, delta * speed);
         
-        if (state.controls) {
-            // @ts-ignore - controls is dynamic from OrbitControls
-            state.controls.target.lerp(targetLookAt.current, delta * speed);
-            // @ts-ignore
-            state.controls.update();
+        const controls = (state as typeof state & { controls?: OrbitControlsLike }).controls;
+        if (controls) {
+            controls.target.lerp(targetLookAt.current, delta * speed);
+            controls.update();
         }
 
         // 2. The Release Mechanism (Check distance)
@@ -82,11 +86,9 @@ export default function CameraController({ avatarHeight, trigger, view }: Camera
         if (dist < 0.1) { // 10cm threshold is safe
             // Snap exactly to target to prevent micro-jitters
             state.camera.position.copy(targetPosition.current);
-            if (state.controls) {
-                // @ts-ignore
-                state.controls.target.copy(targetLookAt.current);
-                // @ts-ignore
-                state.controls.update();
+            if (controls) {
+                controls.target.copy(targetLookAt.current);
+                controls.update();
             }
             
             // RELEASE CONTROL

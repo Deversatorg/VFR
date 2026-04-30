@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SessionApi } from '../../api/apiClients';
+import { SessionApi, getApiErrorMessage } from '../../api/apiClients';
 import { KeyRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -23,8 +23,8 @@ export default function ForgotPassword() {
             setSuccess(msg);
             toast.success(msg);
             setTimeout(() => navigate('/reset-password'), 3000);
-        } catch (err: any) {
-            const errMsg = err.response?.data?.detail || err.response?.data?.title || 'Failed to request password reset.';
+        } catch (err) {
+            const errMsg = getApiErrorMessage(err, 'Failed to request password reset.');
             setError(errMsg);
             toast.error(errMsg);
         } finally {

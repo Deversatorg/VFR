@@ -282,15 +282,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AppCors", policy =>
     {
-        if (allowedCorsOrigins.Length > 0)
-        {
-            policy.WithOrigins(allowedCorsOrigins)
-                  .AllowAnyHeader()
-                  .AllowAnyMethod();
-            return;
-        }
-
-        policy.SetIsOriginAllowed(IsLocalDevelopmentOrigin)
+        policy.SetIsOriginAllowed(origin =>
+            allowedCorsOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)
+            || (builder.Environment.IsDevelopment() && IsLocalDevelopmentOrigin(origin)))
               .AllowAnyHeader()
               .AllowAnyMethod();
     });

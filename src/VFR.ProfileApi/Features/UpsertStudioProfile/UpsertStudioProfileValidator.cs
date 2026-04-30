@@ -27,15 +27,6 @@ public sealed class UpsertStudioProfileValidator : AbstractValidator<UpsertStudi
                 .InclusiveBetween(2, 70)
                 .WithMessage("BodyFatPercentage must be between 2 and 70 percent."));
 
-        When(x => x.GeneratedAvatar is not null, () =>
-        {
-            RuleFor(x => x.GeneratedAvatar!.ModelUrl)
-                .NotEmpty()
-                .WithMessage("GeneratedAvatar.ModelUrl is required when generated avatar metadata is provided.")
-                .MaximumLength(2048)
-                .WithMessage("GeneratedAvatar.ModelUrl must be 2048 characters or fewer.");
-        });
-
         When(x => x.ChestCircumference.HasValue, () =>
             RuleFor(x => x.ChestCircumference!.Value)
                 .InclusiveBetween(20, 260)

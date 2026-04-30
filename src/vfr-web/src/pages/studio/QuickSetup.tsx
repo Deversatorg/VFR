@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { profileClient } from '../../api/apiClients';
+import { profileClient, getApiErrorMessage, getApiErrorPayload } from '../../api/apiClients';
 import { Info, Activity, ScanLine } from 'lucide-react';
 
 export default function QuickSetup() {
@@ -26,11 +26,12 @@ export default function QuickSetup() {
             });
             // Add a slight artificial delay for the "processing" effect
             setTimeout(() => navigate('/studio'), 1500);
-        } catch (err: any) {
-            if (err.response?.data?.errors) {
-                setFieldErrors(err.response.data.errors);
+        } catch (err) {
+            const payload = getApiErrorPayload(err);
+            if (payload?.errors) {
+                setFieldErrors(payload.errors);
             }
-            setError(err.response?.data?.detail || err.response?.data?.title || 'Failed to initialize profile. Please verify your connection.');
+            setError(getApiErrorMessage(err, 'Failed to initialize profile. Please verify your connection.'));
             setLoading(false);
         }
     };

@@ -18,6 +18,44 @@ type RequestConfigWithMetadata = InternalAxiosRequestConfig & {
     metadata?: RequestMetadata;
 };
 
+export type ApiErrorPayload = {
+    detail?: string;
+    title?: string;
+    errors?: Record<string, string[]>;
+};
+
+type LoginRequest = {
+    email: string;
+    password: string;
+};
+
+type RegisterRequest = LoginRequest & {
+    confirmPassword?: string;
+};
+
+type AdminQueryParams = Record<string, string | number | boolean | undefined>;
+
+export function getApiErrorPayload(error: unknown): ApiErrorPayload | undefined {
+    if (!axios.isAxiosError<ApiErrorPayload>(error)) {
+        return undefined;
+    }
+
+    return error.response?.data;
+}
+
+export function getApiErrorMessage(error: unknown, fallback: string) {
+    const payload = getApiErrorPayload(error);
+    return payload?.detail || payload?.title || fallback;
+}
+
+export function getApiErrorStatus(error: unknown): number | undefined {
+    if (!axios.isAxiosError(error)) {
+        return undefined;
+    }
+
+    return error.response?.status;
+}
+
 function setHeader(config: InternalAxiosRequestConfig, name: string, value: string) {
     config.headers.set(name, value);
 }
@@ -110,14 +148,14 @@ attachFailureLogging('avatar', avatarClient);
 // === AUTH & SESSIONS ===
 export const SessionApi = {
     // Current Login
-    login: (data: any) => authClient.post('/api/v1/sessions', data),
+    login: (data: LoginRequest) => authClient.post('/api/v1/sessions', data),
     
     // SSO
     loginGoogle: (data: { idToken: string }) => authClient.post('/api/v1/sessions/google', data),
     loginApple: (data: { identityToken: string, givenName?: string, familyName?: string }) => authClient.post('/api/v1/sessions/apple', data),
     
     // Admin login
-    adminLogin: (data: any) => authClient.post('/api/v1/admin-sessions', data),
+    adminLogin: (data: LoginRequest) => authClient.post('/api/v1/admin-sessions', data),
     
     // Management
     verifyEmail: (data: { email: string; code: string }) => authClient.post('/api/v1/sessions/verify-email', data),
@@ -126,7 +164,7 @@ export const SessionApi = {
 };
 
 export const UserApi = {
-    register: (data: any) => authClient.post('/api/v1/users', data),
+    register: (data: RegisterRequest) => authClient.post('/api/v1/users', data),
 };
 
 // === BILLING ===
@@ -139,7 +177,7 @@ export const BillingApi = {
 
 // === ADMIN ===
 export const AdminApi = {
-    getUsers: (params?: any) => authClient.get('/api/v1/admin-users', { params }),
+    getUsers: (params?: AdminQueryParams) => authClient.get('/api/v1/admin-users', { params }),
     deleteUser: (id: number) => authClient.delete(`/api/v1/admin-users/${id}`),
-    getAdmins: (params?: any) => authClient.get('/api/v1/superadmin/admins', { params }),
+    getAdmins: (params?: AdminQueryParams) => authClient.get('/api/v1/superadmin/admins', { params }),
 };

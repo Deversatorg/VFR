@@ -28,9 +28,9 @@ Current gaps:
 
 ## VFR.AiEngine
 
-- `main.py` configures Python logging at INFO level
-- `ml_pipeline.py`, `garment_pipeline.py`, and `s3_client.py` use named loggers
-- `worker.py` still uses `print()` in active task paths
+- `vfr_ai_engine/api/main.py` configures Python logging at INFO level
+- `vfr_ai_engine/avatar/pipeline.py`, `vfr_ai_engine/garments/pipeline.py`, and `vfr_ai_engine/storage/s3_client.py` use named loggers
+- `vfr_ai_engine/tasks/*` uses the shared logging context for Celery task paths
 - Celery status metadata exists, but that is not a replacement for logs
 
 Current gaps:
