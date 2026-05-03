@@ -6,7 +6,7 @@ import os
 
 from celery import Celery
 
-from vfr_ai_engine.observability.logging import configure_logging
+from vfr_ai_engine.runtime.observability.logging import configure_logging
 
 configure_logging("vfr-aiengine-worker")
 
@@ -24,6 +24,6 @@ celery_app.conf.update(
 )
 
 # Import task modules so Celery registers them when loading this app.
-from vfr_ai_engine.tasks import avatar as _avatar_tasks  # noqa: E402,F401
-from vfr_ai_engine.tasks import garments as _garment_tasks  # noqa: E402,F401
+from vfr_ai_engine.runtime.tasks import avatar as _avatar_tasks  # noqa: E402,F401
+from vfr_ai_engine.runtime.tasks import garments as _garment_tasks  # noqa: E402,F401
 

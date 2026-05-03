@@ -66,6 +66,8 @@ coverage.xml
 
 # Large ML Models
 *.npz
+src/VFR.AiEngine/data/
+src/VFR.AiEngine/training-artifacts/
 
 # User-specific
 appsettings.Development.json

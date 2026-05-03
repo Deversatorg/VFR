@@ -13,7 +13,7 @@ import tempfile
 
 from PIL import Image
 
-from vfr_ai_engine.paths import GARMENT_PRIMITIVES_DIR
+from vfr_ai_engine.runtime.paths import GARMENT_PRIMITIVES_DIR
 
 logger = logging.getLogger(__name__)
 

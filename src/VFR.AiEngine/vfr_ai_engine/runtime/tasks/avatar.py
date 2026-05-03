@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from vfr_ai_engine.avatar.pipeline import run_avatar_generation, run_avatar_generation_from_profile
-from vfr_ai_engine.observability.logging import task_context
-from vfr_ai_engine.tasks.app import celery_app
+from vfr_ai_engine.runtime.avatar.pipeline import run_avatar_generation, run_avatar_generation_from_profile
+from vfr_ai_engine.runtime.observability.logging import task_context
+from vfr_ai_engine.runtime.tasks.app import celery_app
 
 logger = logging.getLogger("VFR.AiEngine.Worker")
 

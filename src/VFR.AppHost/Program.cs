@@ -86,7 +86,7 @@ var aiEngineWorker = builder.AddDockerfile("vfr-aiengine-worker", "../VFR.AiEngi
     .WithEnvironment("OTEL_SERVICE_NAMESPACE", telemetryNamespace)
     // PyTorch deadlock prevention
     .WithEnvironment("OMP_NUM_THREADS", "1")
-    .WithArgs("celery", "-A", "vfr_ai_engine.tasks.app.celery_app", "worker", "--loglevel=info", "--pool=solo");
+    .WithArgs("celery", "-A", "vfr_ai_engine.runtime.tasks.app.celery_app", "worker", "--loglevel=info", "--pool=solo");
 
 if (!string.IsNullOrWhiteSpace(otlpEndpoint))
 {

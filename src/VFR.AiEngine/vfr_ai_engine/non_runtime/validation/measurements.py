@@ -7,9 +7,9 @@ import numpy as np
 import smplx
 import torch
 
-from vfr_ai_engine.measurements.anthropometry import infer_measurement_targets
-from vfr_ai_engine.measurements.optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
-from vfr_ai_engine.paths import APP_ROOT, MODELS_DIR
+from vfr_ai_engine.runtime.measurements.anthropometry import infer_measurement_targets
+from vfr_ai_engine.runtime.measurements.optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
+from vfr_ai_engine.runtime.paths import APP_ROOT, MODELS_DIR
 
 
 SUPPORTED_TARGETS = (

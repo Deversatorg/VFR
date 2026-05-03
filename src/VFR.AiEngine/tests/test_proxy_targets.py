@@ -9,10 +9,11 @@ from unittest.mock import patch
 import torch
 
 
-if Path("/app/vfr_ai_engine").exists():
+CURRENT_FILE = Path(__file__).resolve()
+if str(CURRENT_FILE).startswith("/app/"):
     AI_ENGINE_DIR = Path("/app")
 else:
-    REPO_ROOT = Path(__file__).resolve().parents[3]
+    REPO_ROOT = CURRENT_FILE.parents[3]
     AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
 
 
@@ -24,8 +25,8 @@ def _load_module(module_name: str):
 class ProxyTargetRegressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.ml_pipeline = _load_module("vfr_ai_engine.measurements.proxy_targets")
-        cls.measurement_optimizer = _load_module("vfr_ai_engine.measurements.optimizer")
+        cls.ml_pipeline = _load_module("vfr_ai_engine.runtime.measurements.proxy_targets")
+        cls.measurement_optimizer = _load_module("vfr_ai_engine.runtime.measurements.optimizer")
 
     def test_normalize_proxy_slider_handles_percent_and_unit_inputs(self):
         normalize = self.ml_pipeline.normalize_proxy_slider

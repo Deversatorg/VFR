@@ -9,12 +9,12 @@ import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from vfr_ai_engine.api.schemas import (
+from vfr_ai_engine.runtime.api.schemas import (
     AvatarGenerationResponse,
     GarmentGenerationResponse,
     ProfileAvatarRequest,
 )
-from vfr_ai_engine.api.status import task_status_response
+from vfr_ai_engine.runtime.api.status import task_status_response
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,7 +38,7 @@ async def generate_avatar(file: UploadFile = File(...)):
     task_id = str(uuid.uuid4())
     image_bytes = await file.read()
 
-    from vfr_ai_engine.tasks.avatar import generate_3d_avatar
+    from vfr_ai_engine.runtime.tasks.avatar import generate_3d_avatar
 
     task = generate_3d_avatar.apply_async(args=[task_id, image_bytes], task_id=task_id)
 
@@ -53,7 +53,7 @@ async def generate_avatar(file: UploadFile = File(...)):
 async def generate_avatar_from_profile(request: ProfileAvatarRequest):
     task_id = str(uuid.uuid4())
 
-    from vfr_ai_engine.tasks.avatar import generate_3d_avatar_from_profile
+    from vfr_ai_engine.runtime.tasks.avatar import generate_3d_avatar_from_profile
 
     task = generate_3d_avatar_from_profile.apply_async(
         args=[
@@ -105,7 +105,7 @@ async def generate_garment(file: UploadFile = File(...), primitive_type: str = F
         tmp_file.write(image_bytes)
     logger.info("Garment upload saved to temp: %s", temp_image_path)
 
-    from vfr_ai_engine.tasks.garments import generate_garment_3d
+    from vfr_ai_engine.runtime.tasks.garments import generate_garment_3d
 
     task = generate_garment_3d.apply_async(
         args=[task_id, primitive_type.lower(), temp_image_path],
@@ -123,7 +123,7 @@ async def generate_garment(file: UploadFile = File(...), primitive_type: str = F
 async def get_garment_status(task_id: str):
     """Poll the status of a garment generation task. Same shape as avatar status."""
     from celery.result import AsyncResult
-    from vfr_ai_engine.tasks.app import celery_app
+    from vfr_ai_engine.runtime.tasks.app import celery_app
 
     try:
         result = AsyncResult(task_id, app=celery_app)
@@ -141,7 +141,7 @@ async def get_garment_status(task_id: str):
 @router.get("/api/v1/avatar/status/{task_id}")
 async def get_avatar_status(task_id: str):
     from celery.result import AsyncResult
-    from vfr_ai_engine.tasks.app import celery_app
+    from vfr_ai_engine.runtime.tasks.app import celery_app
 
     try:
         result = AsyncResult(task_id, app=celery_app)

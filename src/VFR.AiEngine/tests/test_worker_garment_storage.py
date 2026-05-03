@@ -10,9 +10,14 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
-TEST_TEMP_ROOT = REPO_ROOT / "tmp" / "aiengine-tests"
+CURRENT_FILE = Path(__file__).resolve()
+if str(CURRENT_FILE).startswith("/app/"):
+    AI_ENGINE_DIR = Path("/app")
+    TEST_TEMP_ROOT = Path("/workspace-tmp") / "aiengine-tests"
+else:
+    REPO_ROOT = CURRENT_FILE.parents[3]
+    AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
+    TEST_TEMP_ROOT = REPO_ROOT / "tmp" / "aiengine-tests"
 
 
 class FakeCeleryConf:
@@ -47,24 +52,24 @@ def _install_fake_modules(output_glb_path: Path) -> dict[str, object]:
             originals[name] = sys.modules[name]
         sys.modules[name] = module
 
-    tasks_app = types.ModuleType("vfr_ai_engine.tasks.app")
+    tasks_app = types.ModuleType("vfr_ai_engine.runtime.tasks.app")
     tasks_app.celery_app = FakeCelery()
-    register("vfr_ai_engine.tasks.app", tasks_app)
+    register("vfr_ai_engine.runtime.tasks.app", tasks_app)
 
     class FakeGarmentMLPipeline:
         def apply_texture_to_primitive(self, primitive_type, image_bytes):
             output_glb_path.write_bytes(b"glb")
             return str(output_glb_path)
 
-    garment_pipeline = types.ModuleType("vfr_ai_engine.garments.pipeline")
+    garment_pipeline = types.ModuleType("vfr_ai_engine.runtime.garments.pipeline")
     garment_pipeline.GarmentMLPipeline = FakeGarmentMLPipeline
-    register("vfr_ai_engine.garments.pipeline", garment_pipeline)
+    register("vfr_ai_engine.runtime.garments.pipeline", garment_pipeline)
 
     return originals
 
 
 def _restore_modules(originals: dict[str, object]) -> None:
-    for name in ["vfr_ai_engine.garments.pipeline", "vfr_ai_engine.tasks.app", "vfr_ai_engine.tasks.garments", "vfr_ai_engine.paths"]:
+    for name in ["vfr_ai_engine.runtime.garments.pipeline", "vfr_ai_engine.runtime.tasks.app", "vfr_ai_engine.runtime.tasks.garments", "vfr_ai_engine.runtime.paths"]:
         original = originals.get(name)
         if original is None:
             sys.modules.pop(name, None)
@@ -74,9 +79,9 @@ def _restore_modules(originals: dict[str, object]) -> None:
 
 def _load_worker_module() -> types.ModuleType:
     sys.path.insert(0, str(AI_ENGINE_DIR))
-    sys.modules.pop("vfr_ai_engine.tasks.garments", None)
-    sys.modules.pop("vfr_ai_engine.paths", None)
-    return importlib.import_module("vfr_ai_engine.tasks.garments")
+    sys.modules.pop("vfr_ai_engine.runtime.tasks.garments", None)
+    sys.modules.pop("vfr_ai_engine.runtime.paths", None)
+    return importlib.import_module("vfr_ai_engine.runtime.tasks.garments")
 
 
 class AiEngineWorkerGarmentStorageTests(unittest.TestCase):

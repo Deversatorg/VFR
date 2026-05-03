@@ -7,7 +7,7 @@ import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from vfr_ai_engine.paths import AVATAR_STORAGE_DIR, GARMENT_STORAGE_DIR
+from vfr_ai_engine.runtime.paths import AVATAR_STORAGE_DIR, GARMENT_STORAGE_DIR
 
 AVATARS_DIR = str(AVATAR_STORAGE_DIR)
 GARMENTS_DIR = str(GARMENT_STORAGE_DIR)

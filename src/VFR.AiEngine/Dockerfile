@@ -32,4 +32,4 @@ ENV GRPC_PORT=50051 \
     AVATAR_STORAGE_BASE=https://storage.vfr.dev/models \
     PYTHONUNBUFFERED=1
 
-CMD ["python", "-m", "vfr_ai_engine.api.main"]
+CMD ["python", "-m", "vfr_ai_engine.runtime.api.main"]

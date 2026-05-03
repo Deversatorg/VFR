@@ -1,7 +1,7 @@
 import os
 import urllib.request
 
-from vfr_ai_engine.paths import MODELS_DIR
+from vfr_ai_engine.runtime.paths import MODELS_DIR
 
 def reporthook(block_num, block_size, total_size):
     read_so_far = block_num * block_size

@@ -14,12 +14,12 @@ Read `src/VFR.AiEngine/CONTEXT.md` first.
 
 ## Entry Points
 
-- `src/VFR.AiEngine/vfr_ai_engine/api`
-- `src/VFR.AiEngine/vfr_ai_engine/tasks`
-- `src/VFR.AiEngine/vfr_ai_engine/avatar/pipeline.py`
-- `src/VFR.AiEngine/vfr_ai_engine/measurements`
-- `src/VFR.AiEngine/vfr_ai_engine/storage/s3_client.py`
-- `src/VFR.AiEngine/vfr_ai_engine/garments/pipeline.py`
+- `src/VFR.AiEngine/vfr_ai_engine/runtime/api`
+- `src/VFR.AiEngine/vfr_ai_engine/runtime/tasks`
+- `src/VFR.AiEngine/vfr_ai_engine/runtime/avatar/pipeline.py`
+- `src/VFR.AiEngine/vfr_ai_engine/runtime/measurements`
+- `src/VFR.AiEngine/vfr_ai_engine/runtime/storage/s3_client.py`
+- `src/VFR.AiEngine/vfr_ai_engine/runtime/garments/pipeline.py`
 - relevant files in `src/VFR.AiEngine/tests`
 
 ## Risks

@@ -11,10 +11,15 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
-MAIN_MODULE = "vfr_ai_engine.api.main"
-TEST_TEMP_ROOT = REPO_ROOT / "tmp" / "aiengine-tests"
+CURRENT_FILE = Path(__file__).resolve()
+if str(CURRENT_FILE).startswith("/app/"):
+    AI_ENGINE_DIR = Path("/app")
+    TEST_TEMP_ROOT = Path("/workspace-tmp") / "aiengine-tests"
+else:
+    REPO_ROOT = CURRENT_FILE.parents[3]
+    AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
+    TEST_TEMP_ROOT = REPO_ROOT / "tmp" / "aiengine-tests"
+MAIN_MODULE = "vfr_ai_engine.runtime.api.main"
 
 
 class FakeAsyncResult:
@@ -166,18 +171,18 @@ def _install_fake_modules() -> dict[str, object]:
     avatar_pb2_grpc.add_AvatarServiceServicer_to_server = lambda *args, **kwargs: None
     register("avatar_pb2_grpc", avatar_pb2_grpc)
 
-    tasks_app = types.ModuleType("vfr_ai_engine.tasks.app")
+    tasks_app = types.ModuleType("vfr_ai_engine.runtime.tasks.app")
     tasks_app.celery_app = object()
-    register("vfr_ai_engine.tasks.app", tasks_app)
+    register("vfr_ai_engine.runtime.tasks.app", tasks_app)
 
-    avatar_tasks = types.ModuleType("vfr_ai_engine.tasks.avatar")
+    avatar_tasks = types.ModuleType("vfr_ai_engine.runtime.tasks.avatar")
     avatar_tasks.generate_3d_avatar = FakeCeleryTask()
     avatar_tasks.generate_3d_avatar_from_profile = FakeCeleryTask()
-    register("vfr_ai_engine.tasks.avatar", avatar_tasks)
+    register("vfr_ai_engine.runtime.tasks.avatar", avatar_tasks)
 
-    garment_tasks = types.ModuleType("vfr_ai_engine.tasks.garments")
+    garment_tasks = types.ModuleType("vfr_ai_engine.runtime.tasks.garments")
     garment_tasks.generate_garment_3d = FakeCeleryTask()
-    register("vfr_ai_engine.tasks.garments", garment_tasks)
+    register("vfr_ai_engine.runtime.tasks.garments", garment_tasks)
 
     celery = types.ModuleType("celery")
     celery.__path__ = []
@@ -208,9 +213,9 @@ def _restore_modules(originals: dict[str, object]) -> None:
         "pydantic",
         "avatar_pb2",
         "avatar_pb2_grpc",
-        "vfr_ai_engine.tasks.app",
-        "vfr_ai_engine.tasks.avatar",
-        "vfr_ai_engine.tasks.garments",
+        "vfr_ai_engine.runtime.tasks.app",
+        "vfr_ai_engine.runtime.tasks.avatar",
+        "vfr_ai_engine.runtime.tasks.garments",
         "celery.result",
         "celery",
         "grpc",
@@ -225,11 +230,11 @@ def _restore_modules(originals: dict[str, object]) -> None:
 
 def _load_main_module() -> types.ModuleType:
     for module_name in [
-        "vfr_ai_engine.api.main",
-        "vfr_ai_engine.api.app",
-        "vfr_ai_engine.api.routes",
-        "vfr_ai_engine.api.static_files",
-        "vfr_ai_engine.paths",
+        "vfr_ai_engine.runtime.api.main",
+        "vfr_ai_engine.runtime.api.app",
+        "vfr_ai_engine.runtime.api.routes",
+        "vfr_ai_engine.runtime.api.static_files",
+        "vfr_ai_engine.runtime.paths",
     ]:
         sys.modules.pop(module_name, None)
 
@@ -412,7 +417,7 @@ class AiEngineStatusEndpointContractTests(unittest.TestCase):
         self.assertEqual(response.message, "Parametric avatar generation task queued.")
         self.assertTrue(response.task_id)
 
-        avatar_tasks = sys.modules["vfr_ai_engine.tasks.avatar"]
+        avatar_tasks = sys.modules["vfr_ai_engine.runtime.tasks.avatar"]
         self.assertEqual(len(avatar_tasks.generate_3d_avatar_from_profile.calls), 1)
 
         recorded_call = avatar_tasks.generate_3d_avatar_from_profile.calls[0]

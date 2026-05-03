@@ -8,9 +8,9 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from vfr_ai_engine.api.middleware import install_request_logging
-from vfr_ai_engine.api.routes import router
-from vfr_ai_engine.api.static_files import install_static_model_mounts
+from vfr_ai_engine.runtime.api.middleware import install_request_logging
+from vfr_ai_engine.runtime.api.routes import router
+from vfr_ai_engine.runtime.api.static_files import install_static_model_mounts
 
 
 def create_app() -> FastAPI:

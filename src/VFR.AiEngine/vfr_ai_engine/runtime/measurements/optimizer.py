@@ -11,7 +11,7 @@ import torch
 logger = logging.getLogger("MeasurementOptimizer")
 
 # Vertex loops extracted from the local SMPL-X topology via
-# vfr_ai_engine.validation.extract_vertex_loops.
+# vfr_ai_engine.non_runtime.validation.extract_vertex_loops.
 MEASUREMENT_VERTICES = {
     "chest_circumference": [3573, 3315, 3314, 3897, 5449, 5531, 8183, 6645, 6077, 6078, 6334, 8340, 8339, 8338, 8342, 8341, 6005, 6003, 8179, 8178, 8262, 8263, 6796, 6134, 6133, 6150, 8267, 8216, 6815, 6814, 6813, 6640, 7188, 6623, 6142, 6143, 5487, 3382, 3381, 3872, 4452, 3892, 4069, 4070, 4071, 5482, 5554, 3389, 3372, 3373, 4050, 5550, 5549, 5444, 5445, 3240, 3242, 5647, 5648, 5644, 5645, 5646],
     "waist_circumference": [3335, 3308, 3293, 3550, 3549, 3547, 3546, 4400, 5940, 7136, 6307, 6308, 6310, 6311, 6056, 6071, 6098, 6329, 6070, 6222, 6221, 6236, 6235, 6278, 8240, 8239, 7137, 7138, 5493, 4402, 4401, 5517, 5520, 3517, 3474, 3475, 3460, 3461, 3307, 3568],
@@ -20,11 +20,12 @@ MEASUREMENT_VERTICES = {
     # proxy loop, but it is distinct from the chest contour so shoulder targets
     # can move independently instead of fighting the chest measurement directly.
     "shoulder_circumference": [3313, 3310, 4397, 4169, 3835, 3834, 3979, 3980, 3334, 5439, 5440, 5643, 5641, 5640, 5637, 5636, 3984, 3983, 3895, 3894, 5657, 5938, 8351, 6642, 6643, 6731, 6732, 8330, 8331, 8334, 8335, 8337, 8174, 8173, 6097, 6728, 6727, 6589, 6590, 6913, 7133, 6073, 6076, 6659, 6661, 6146, 7233, 6105, 6880, 7193, 8272, 7189, 7190, 8245, 8243, 8241, 8242, 8327, 5947, 5633, 5522, 5521, 5523, 5525, 4454, 4453, 5560, 4457, 4136, 3342, 4497, 3385, 3913, 3911],
-    # Placeholder average proxy loop; currently mirrors the extracted left side.
-    "bicep_circumference": [3318, 3319, 3826, 3825, 3571, 4392, 3276, 3277, 3910, 3356, 3352, 3523, 3521, 5427, 3399, 3400, 5489, 6161, 6160, 8161, 6282, 6284, 6115, 6117, 6658, 6040, 6039, 7128, 6332, 6582, 6583, 6082, 6081, 6083, 6052, 6319, 6085, 6729, 5534, 3981, 3322, 3558, 3289, 3320],
+    # Mid-upper-arm contour extracted from an X-normal plane at 48% of the
+    # positive arm span. The average proxy currently mirrors the left side.
+    "bicep_circumference": [4386, 4387, 4267, 4268, 4373, 4262, 4261, 4303, 4304, 4355, 4356, 4336, 4335, 4351, 4378, 4271, 4272, 4345],
     # Placeholder average proxy loop; currently mirrors the extracted left side.
     "thigh_circumference": [3770, 5702, 5701, 3858, 3797, 4131, 4086, 5706, 3794, 3792, 4133, 4134, 4110, 3480, 3477, 3574, 3482, 3465, 3464, 3867, 3501, 3500, 3993, 3773],
-    "left_bicep_circumference": [3318, 3319, 3826, 3825, 3571, 4392, 3276, 3277, 3910, 3356, 3352, 3523, 3521, 5427, 3399, 3400, 5489, 6161, 6160, 8161, 6282, 6284, 6115, 6117, 6658, 6040, 6039, 7128, 6332, 6582, 6583, 6082, 6081, 6083, 6052, 6319, 6085, 6729, 5534, 3981, 3322, 3558, 3289, 3320],
+    "left_bicep_circumference": [4386, 4387, 4267, 4268, 4373, 4262, 4261, 4303, 4304, 4355, 4356, 4336, 4335, 4351, 4378, 4271, 4272, 4345],
     "left_thigh_circumference": [3770, 5702, 5701, 3858, 3797, 4131, 4086, 5706, 3794, 3792, 4133, 4134, 4110, 3480, 3477, 3574, 3482, 3465, 3464, 3867, 3501, 3500, 3993, 3773],
 }
 
@@ -185,7 +186,7 @@ def _loop_circumference_cm(vertices: torch.Tensor, loop_name: str) -> torch.Tens
     if len(loop_indices) < 3:
         raise RuntimeError(
             f"Vertex loop '{loop_name}' is not configured. "
-            "Run vfr_ai_engine.validation.extract_vertex_loops and paste the resulting indices into MEASUREMENT_VERTICES."
+            "Run vfr_ai_engine.non_runtime.validation.extract_vertex_loops and paste the resulting indices into MEASUREMENT_VERTICES."
         )
 
     vertex_index_tensor = torch.tensor(loop_indices, dtype=torch.long, device=vertices.device)
@@ -675,7 +676,7 @@ def optimize_smplx_betas(
         if loop_name and not _has_valid_loop(loop_name):
             raise RuntimeError(
                 f"Cannot optimize '{measurement_name}' because '{loop_name}' is still a placeholder. "
-                "Run vfr_ai_engine.validation.extract_vertex_loops and paste the results into MEASUREMENT_VERTICES."
+                "Run vfr_ai_engine.non_runtime.validation.extract_vertex_loops and paste the results into MEASUREMENT_VERTICES."
             )
 
     torch_device = torch.device(device)

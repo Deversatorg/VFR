@@ -26,9 +26,9 @@ try:
 except ImportError:
     HAS_ML_DEPS = False
 
-from vfr_ai_engine.measurements.anthropometry import infer_measurement_targets
-from vfr_ai_engine.measurements.optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
-from vfr_ai_engine.measurements.proxy_targets import (
+from vfr_ai_engine.runtime.measurements.anthropometry import infer_measurement_targets as infer_heuristic_measurement_targets
+from vfr_ai_engine.runtime.measurements.optimizer import apply_proportion_warp, calculate_measurements, optimize_smplx_betas
+from vfr_ai_engine.runtime.measurements.proxy_targets import (
     PROFILE_OPTIMIZATION_WEIGHTS,
     STRICT_EXPLICIT_MEASUREMENT_WEIGHT,
     build_profile_optimizer_targets,
@@ -36,10 +36,55 @@ from vfr_ai_engine.measurements.proxy_targets import (
     convert_shoulder_width_to_circumference_cm,
     normalize_proxy_slider,
 )
-from vfr_ai_engine.paths import MODELS_DIR
-from vfr_ai_engine.storage.s3_client import upload_glb
+from vfr_ai_engine.runtime.paths import MODELS_DIR
+from vfr_ai_engine.runtime.storage.s3_client import upload_glb
 
 logger = logging.getLogger("AvatarML")
+
+
+def measurement_target_provider() -> str:
+    return os.getenv("MEASUREMENT_TARGET_PROVIDER", "heuristic").strip().lower()
+
+
+def infer_profile_measurement_targets(
+    *,
+    height_cm: float,
+    weight_kg: float,
+    body_type: str,
+    gender: str,
+    muscularity: float | None,
+    body_fat_percentage: float | None,
+    overrides: dict[str, float],
+    hints: dict[str, float],
+) -> tuple[dict[str, float], dict[str, float], dict[str, str]]:
+    provider = measurement_target_provider()
+    if provider in {"", "heuristic"}:
+        return infer_heuristic_measurement_targets(
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            body_type=body_type,
+            gender=gender,
+            muscularity=None,
+            body_fat_percentage=None,
+            overrides=overrides,
+            hints=hints,
+        )
+    if provider == "regressor":
+        from vfr_ai_engine.runtime.measurements.regressor import infer_measurement_targets as infer_regressor_measurement_targets
+
+        return infer_regressor_measurement_targets(
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            body_type=body_type,
+            gender=gender,
+            muscularity=muscularity,
+            body_fat_percentage=body_fat_percentage,
+            overrides=overrides,
+            hints=hints,
+        )
+    raise RuntimeError(
+        f"Unknown MEASUREMENT_TARGET_PROVIDER='{provider}'. Expected 'heuristic' or 'regressor'."
+    )
 
 
 class AvatarMLPipeline:
@@ -580,13 +625,13 @@ class AvatarMLPipeline:
             if arm_length > 0:
                 user_measurement_overrides["arm_length_cm"] = arm_length
 
-            target_measurements, measurement_weights, measurement_sources = infer_measurement_targets(
+            target_measurements, measurement_weights, measurement_sources = infer_profile_measurement_targets(
                 height_cm=height_cm,
                 weight_kg=weight_kg,
                 body_type=body_type,
                 gender=gender,
-                muscularity=None,
-                body_fat_percentage=None,
+                muscularity=muscularity,
+                body_fat_percentage=body_fat_percentage,
                 overrides=user_measurement_overrides,
                 hints={
                     "shoulder_cm": shoulder,
@@ -624,12 +669,15 @@ class AvatarMLPipeline:
 
             normalized_muscle_slider = normalize_proxy_slider(muscularity)
             normalized_fat_slider = normalize_proxy_slider(body_fat_percentage)
-            proxy_targets = calculate_proxy_targets(
-                exact_measurements=target_measurements,
-                muscle_slider=normalized_muscle_slider,
-                fat_slider=normalized_fat_slider,
-                gender=gender,
-            )
+            if measurement_target_provider() == "regressor":
+                proxy_targets = {}
+            else:
+                proxy_targets = calculate_proxy_targets(
+                    exact_measurements=target_measurements,
+                    muscle_slider=normalized_muscle_slider,
+                    fat_slider=normalized_fat_slider,
+                    gender=gender,
+                )
             if proxy_targets:
                 if measurement_sources.get("shoulder_circumference_cm") == "user":
                     proxy_targets = {
@@ -659,6 +707,10 @@ class AvatarMLPipeline:
                     },
                 }
 
+            shape_hint_shoulder = shoulder if shoulder > 0 else target_measurements.get("shoulder_cm", 0.0)
+            shape_hint_calf = calf if calf > 0 else target_measurements.get("calf_cm", 0.0)
+            shape_hint_torso = torso_length if torso_length > 0 else target_measurements.get("torso_length_cm", 0.0)
+
             heuristic_betas = self._simulate_profile_betas(
                 height_cm,
                 weight_kg,
@@ -666,10 +718,10 @@ class AvatarMLPipeline:
                 target_measurements.get("chest_cm", 0.0),
                 target_measurements.get("waist_cm", 0.0),
                 target_measurements.get("hips_cm", 0.0),
-                shoulder,
-                calf,
+                shape_hint_shoulder,
+                shape_hint_calf,
                 target_measurements.get("arm_length_cm", 0.0),
-                torso_length,
+                shape_hint_torso,
                 target_measurements.get("leg_length_cm", 0.0),
             )
 
@@ -772,7 +824,7 @@ class AvatarMLPipeline:
 
             import re
             import time
-            from vfr_ai_engine.storage.s3_client import delete_old_user_avatars
+            from vfr_ai_engine.runtime.storage.s3_client import delete_old_user_avatars
             
             safe_user_id = re.sub(r'[^a-zA-Z0-9_\-]', '', user_id)
             timestamp = int(time.time())

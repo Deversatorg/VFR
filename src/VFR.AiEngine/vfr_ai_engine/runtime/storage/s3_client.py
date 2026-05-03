@@ -10,7 +10,7 @@ import boto3
 from botocore.client import Config
 from dotenv import load_dotenv
 
-from vfr_ai_engine.paths import AVATAR_STORAGE_DIR
+from vfr_ai_engine.runtime.paths import AVATAR_STORAGE_DIR
 
 load_dotenv()  # reads .env when running locally; no-op inside Aspire (env vars injected)
 

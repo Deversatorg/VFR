@@ -6,10 +6,10 @@ import logging
 import os
 import shutil
 
-from vfr_ai_engine.garments.pipeline import GarmentMLPipeline
-from vfr_ai_engine.observability.logging import task_context
-from vfr_ai_engine.paths import GARMENT_STORAGE_DIR
-from vfr_ai_engine.tasks.app import celery_app
+from vfr_ai_engine.runtime.garments.pipeline import GarmentMLPipeline
+from vfr_ai_engine.runtime.observability.logging import task_context
+from vfr_ai_engine.runtime.paths import GARMENT_STORAGE_DIR
+from vfr_ai_engine.runtime.tasks.app import celery_app
 
 logger = logging.getLogger("VFR.AiEngine.Worker")
 

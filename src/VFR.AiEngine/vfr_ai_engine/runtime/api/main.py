@@ -8,8 +8,8 @@ import threading
 
 import uvicorn
 
-from vfr_ai_engine.api.app import create_app
-from vfr_ai_engine.api.routes import (
+from vfr_ai_engine.runtime.api.app import create_app
+from vfr_ai_engine.runtime.api.routes import (
     generate_avatar,
     generate_avatar_from_profile,
     generate_garment,
@@ -18,11 +18,11 @@ from vfr_ai_engine.api.routes import (
     health_check,
     read_root,
 )
-from vfr_ai_engine.api.schemas import AvatarGenerationResponse, GarmentGenerationResponse, ProfileAvatarRequest
-from vfr_ai_engine.api.static_files import AVATARS_DIR as _AVATARS_DIR, GARMENTS_DIR as _GARMENTS_DIR
-from vfr_ai_engine.api.status import task_status_response as _task_status_response
-from vfr_ai_engine.grpc.server import serve_grpc
-from vfr_ai_engine.observability.logging import configure_logging
+from vfr_ai_engine.runtime.api.schemas import AvatarGenerationResponse, GarmentGenerationResponse, ProfileAvatarRequest
+from vfr_ai_engine.runtime.api.static_files import AVATARS_DIR as _AVATARS_DIR, GARMENTS_DIR as _GARMENTS_DIR
+from vfr_ai_engine.runtime.api.status import task_status_response as _task_status_response
+from vfr_ai_engine.runtime.grpc.server import serve_grpc
+from vfr_ai_engine.runtime.observability.logging import configure_logging
 
 configure_logging("vfr-aiengine")
 logger = logging.getLogger(__name__)

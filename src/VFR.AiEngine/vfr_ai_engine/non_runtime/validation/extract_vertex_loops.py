@@ -7,23 +7,24 @@ import smplx
 import torch
 import trimesh
 
-from vfr_ai_engine.paths import MODELS_DIR
+from vfr_ai_engine.runtime.paths import MODELS_DIR
 
 
 def _slice_mesh_components(
     mesh: trimesh.Trimesh,
-    height_y: float,
+    plane_origin: List[float],
+    plane_normal: List[float],
     rounding_decimals: int = 6,
 ) -> List[np.ndarray]:
     """
-    Slice the mesh with a horizontal plane and split the resulting line
+    Slice the mesh with a plane and split the resulting line
     segments into disconnected contour components.
     """
     slice_segments = np.asarray(
         trimesh.intersections.mesh_plane(
             mesh,
-            plane_origin=[0, height_y, 0],
-            plane_normal=[0, 1, 0],
+            plane_origin=plane_origin,
+            plane_normal=plane_normal,
         )
     )
 
@@ -212,6 +213,42 @@ def _select_contour_candidate(candidates: List[dict], strategy: str) -> dict:
     raise ValueError(f"Unknown contour selection strategy: {strategy}")
 
 
+def _contour_circumference(contour_points: np.ndarray) -> float:
+    shifted = np.roll(contour_points, shift=-1, axis=0)
+    return float(np.linalg.norm(shifted - contour_points, axis=1).sum())
+
+
+def _select_upper_arm_candidate(candidates: List[dict], side: str) -> dict:
+    """
+    Pick a compact upper-arm contour from planes perpendicular to the arm axis.
+    """
+    if not candidates:
+        raise ValueError("No upper-arm contour candidates found.")
+
+    sign = 1.0 if side == "positive_x" else -1.0
+    side_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate["centroid"][0] * sign > 0
+    ]
+    pool = side_candidates or candidates
+
+    def candidate_score(candidate: dict) -> tuple[float, float, float]:
+        points = candidate["contour_points"]
+        bbox_size = points.max(axis=0) - points.min(axis=0)
+        circumference = _contour_circumference(points)
+        yz_extent = float(max(bbox_size[1], bbox_size[2]))
+        compactness_penalty = max(0.0, yz_extent - 0.25)
+        circumference_penalty = max(0.0, circumference - 0.70)
+        return (
+            abs(float(candidate["sample_ratio"]) - 0.48),
+            compactness_penalty + circumference_penalty,
+            circumference,
+        )
+
+    return min(pool, key=candidate_score)
+
+
 def _print_contour_diagnostics(label: str, candidates: List[dict], selected: dict) -> None:
     print(f"{label}: found {len(candidates)} contour candidate(s)")
     for candidate in candidates:
@@ -227,14 +264,47 @@ def _print_contour_diagnostics(label: str, candidates: List[dict], selected: dic
 
 def extract_measurement_loop(
     mesh: trimesh.Trimesh,
-    height_y: float,
+    plane_origin: List[float],
+    plane_normal: List[float],
     label: str,
     strategy: str,
 ) -> List[int]:
-    contour_components = _slice_mesh_components(mesh, height_y)
+    contour_components = _slice_mesh_components(mesh, plane_origin, plane_normal)
     candidates = _build_contour_candidates(mesh, contour_components)
     selected = _select_contour_candidate(candidates, strategy)
     _print_contour_diagnostics(label, candidates, selected)
+    return selected["ordered_indices"]
+
+
+def extract_upper_arm_loop(mesh: trimesh.Trimesh, label: str, side: str) -> List[int]:
+    min_x = float(mesh.vertices[:, 0].min())
+    max_x = float(mesh.vertices[:, 0].max())
+    center_x = (min_x + max_x) * 0.5
+    outer_x = max_x if side == "positive_x" else min_x
+    side_span = abs(outer_x - center_x)
+    sign = 1.0 if side == "positive_x" else -1.0
+
+    candidates: List[dict] = []
+    for sample_ratio in (0.40, 0.48, 0.56, 0.64):
+        x_value = center_x + sign * side_span * sample_ratio
+        contour_components = _slice_mesh_components(
+            mesh,
+            plane_origin=[x_value, 0.0, 0.0],
+            plane_normal=[1.0, 0.0, 0.0],
+        )
+        for candidate in _build_contour_candidates(mesh, contour_components):
+            candidate["sample_ratio"] = sample_ratio
+            candidate["contour_points"] = contour_components[candidate["component_index"]]
+            candidates.append(candidate)
+
+    selected = _select_upper_arm_candidate(candidates, side)
+    _print_contour_diagnostics(label, candidates, selected)
+    sx, sy, sz = selected["centroid"]
+    print(
+        f"  selected sample_ratio={selected['sample_ratio']:.2f} "
+        f"circumference={_contour_circumference(selected['contour_points']) * 100.0:.2f}cm "
+        f"centroid=({sx:.4f}, {sy:.4f}, {sz:.4f})"
+    )
     return selected["ordered_indices"]
 
 
@@ -263,14 +333,13 @@ def extract_loops(smplx_model_path: str) -> None:
     waist_y = min_y + (height * 0.60)
     hips_y = min_y + (height * 0.52)
     thigh_y = min_y + (height * 0.45)
-    bicep_y = min_y + (height * 0.70)
 
     print("Slicing mesh and resolving contour loops on the original SMPL-X mesh...")
-    chest_indices = extract_measurement_loop(mesh, chest_y, "Chest", "center")
-    waist_indices = extract_measurement_loop(mesh, waist_y, "Waist", "center")
-    hips_indices = extract_measurement_loop(mesh, hips_y, "Hips", "center")
-    bicep_indices = extract_measurement_loop(mesh, bicep_y, "Left Bicep", "positive_x")
-    thigh_indices = extract_measurement_loop(mesh, thigh_y, "Left Thigh", "positive_x")
+    chest_indices = extract_measurement_loop(mesh, [0, chest_y, 0], [0, 1, 0], "Chest", "center")
+    waist_indices = extract_measurement_loop(mesh, [0, waist_y, 0], [0, 1, 0], "Waist", "center")
+    hips_indices = extract_measurement_loop(mesh, [0, hips_y, 0], [0, 1, 0], "Hips", "center")
+    bicep_indices = extract_upper_arm_loop(mesh, "Left Bicep", "positive_x")
+    thigh_indices = extract_measurement_loop(mesh, [0, thigh_y, 0], [0, 1, 0], "Left Thigh", "positive_x")
 
     print("\n--- EXTRACTION COMPLETE ---")
     print("Copy and paste this into your MEASUREMENT_VERTICES dictionary:\n")
@@ -278,6 +347,7 @@ def extract_loops(smplx_model_path: str) -> None:
     print(f"    'chest_circumference': {chest_indices},")
     print(f"    'waist_circumference': {waist_indices},")
     print(f"    'hips_circumference': {hips_indices},")
+    print(f"    'bicep_circumference': {bicep_indices},")
     print(f"    'left_bicep_circumference': {bicep_indices},")
     print(f"    'left_thigh_circumference': {thigh_indices},")
     print("}")

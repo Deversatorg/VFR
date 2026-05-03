@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-engine_root = Path(__file__).resolve().parents[2]
+engine_root = Path(__file__).resolve().parents[3]
 repo_root = engine_root.parent.parent
 proto_dir = engine_root
 proto_file = proto_dir / "avatar.proto"

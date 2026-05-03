@@ -10,9 +10,14 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
-TEST_TEMP_ROOT = REPO_ROOT / "tmp" / "aiengine-tests"
+CURRENT_FILE = Path(__file__).resolve()
+if str(CURRENT_FILE).startswith("/app/"):
+    AI_ENGINE_DIR = Path("/app")
+    TEST_TEMP_ROOT = Path("/workspace-tmp") / "aiengine-tests"
+else:
+    REPO_ROOT = CURRENT_FILE.parents[3]
+    AI_ENGINE_DIR = REPO_ROOT / "src" / "VFR.AiEngine"
+    TEST_TEMP_ROOT = REPO_ROOT / "tmp" / "aiengine-tests"
 
 
 def _install_fake_modules() -> dict[str, object]:
@@ -53,9 +58,9 @@ def _restore_modules(originals: dict[str, object]) -> None:
 
 def _load_s3_client_module():
     sys.path.insert(0, str(AI_ENGINE_DIR))
-    for module_name in ["vfr_ai_engine.storage.s3_client", "vfr_ai_engine.paths"]:
+    for module_name in ["vfr_ai_engine.runtime.storage.s3_client", "vfr_ai_engine.runtime.paths"]:
         sys.modules.pop(module_name, None)
-    return importlib.import_module("vfr_ai_engine.storage.s3_client")
+    return importlib.import_module("vfr_ai_engine.runtime.storage.s3_client")
 
 
 class S3ClientFallbackContractTests(unittest.TestCase):

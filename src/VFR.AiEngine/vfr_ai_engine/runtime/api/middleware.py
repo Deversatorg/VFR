@@ -7,7 +7,7 @@ import time
 
 from fastapi import FastAPI, Request
 
-from vfr_ai_engine.observability.logging import generate_request_id, request_context
+from vfr_ai_engine.runtime.observability.logging import generate_request_id, request_context
 
 
 def extract_trace_id(request: Request) -> str | None:
